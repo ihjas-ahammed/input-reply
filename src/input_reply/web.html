@@ -1,0 +1,2746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Input Reply – Desktop Macro Dashboard</title>
+  <style>
+    /* CSS Reset & Design Tokens */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #090d16;
+      --surface: #111827;
+      --surface-subtle: #172033;
+      --surface-card: #131b2e;
+      --surface-input: #0b1120;
+      --border: #232f48;
+      --border-hover: #334466;
+      --border-focus: #3b82f6;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-bg: rgba(59, 130, 246, 0.15);
+      --success: #10b981;
+      --success-hover: #059669;
+      --success-bg: rgba(16, 185, 129, 0.15);
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --danger-bg: rgba(239, 68, 68, 0.15);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.15);
+      --focus-ring: #60a5fa;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-full: 9999px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
+    }
+
+    button, input, select, textarea {
+      font-family: inherit;
+      color: inherit;
+    }
+
+    /* Layout Containers */
+    .app-wrapper {
+      max-width: 1280px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      flex: 1;
+    }
+
+    /* Header */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--primary-bg);
+      color: var(--primary);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+    }
+
+    .header-status-group {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    /* Badges & Status Indicators */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.75rem;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      font-size: 0.8125rem;
+      font-weight: 500;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: var(--radius-full);
+      background: var(--text-dim);
+    }
+
+    .dot-online {
+      background: var(--success);
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+    }
+
+    .dot-offline {
+      background: var(--danger);
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+    }
+
+    .status-phase-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.65rem;
+      border-radius: var(--radius-full);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border: 1px solid var(--border);
+      background: var(--surface-subtle);
+      color: var(--text-muted);
+    }
+
+    .phase-idle {
+      background: rgba(148, 163, 184, 0.1);
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    .phase-countdown {
+      background: var(--warning-bg);
+      border-color: rgba(245, 158, 11, 0.4);
+      color: var(--warning);
+      animation: pulse-glow 1.5s infinite;
+    }
+
+    .phase-recording {
+      background: var(--danger-bg);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: var(--danger);
+      animation: pulse-glow 1s infinite;
+    }
+
+    .phase-replaying {
+      background: var(--primary-bg);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: var(--primary);
+      animation: pulse-glow 1.2s infinite;
+    }
+
+    .phase-done {
+      background: var(--success-bg);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: var(--success);
+    }
+
+    .phase-error {
+      background: var(--danger-bg);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: var(--danger);
+    }
+
+    .phase-cancelled {
+      background: rgba(148, 163, 184, 0.1);
+      border-color: var(--border);
+      color: var(--text-dim);
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.75; transform: scale(0.98); }
+    }
+
+    /* Security Notice */
+    .security-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.85rem 1.15rem;
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-radius: var(--radius-md);
+      color: #fde68a;
+      font-size: 0.875rem;
+      line-height: 1.45;
+    }
+
+    .security-banner svg {
+      flex-shrink: 0;
+      color: var(--warning);
+      margin-top: 0.15rem;
+    }
+
+    /* Job Monitor Section */
+    .job-monitor-card {
+      padding: 1rem 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      transition: border-color 0.2s;
+    }
+
+    .job-monitor-card.is-busy {
+      border-color: rgba(59, 130, 246, 0.5);
+      background: linear-gradient(90deg, rgba(59, 130, 246, 0.05), var(--surface));
+    }
+
+    .job-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      min-width: 0;
+    }
+
+    .job-header-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .job-message {
+      font-size: 0.9375rem;
+      color: var(--text-main);
+      font-weight: 500;
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+
+    /* Two Column Dashboard Grid */
+    .app-layout {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-body {
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+
+    /* Forms & Inputs */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .form-group label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .form-group label .required {
+      color: var(--danger);
+    }
+
+    .form-row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+    }
+
+    .input-control, .select-control {
+      width: 100%;
+      background: var(--surface-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.65rem 0.85rem;
+      font-size: 0.9375rem;
+      color: var(--text-main);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .input-control:focus, .select-control:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px var(--primary-bg);
+      outline: none;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .input-row .select-control {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .form-help {
+      font-size: 0.775rem;
+      color: var(--text-dim);
+      line-height: 1.35;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.55rem;
+      cursor: pointer;
+      margin-top: 0.25rem;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      margin-top: 0.2rem;
+      width: 16px;
+      height: 16px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    .checkbox-label {
+      font-size: 0.875rem;
+      color: var(--text-main);
+      user-select: none;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.15rem;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.05s, opacity 0.15s;
+      white-space: nowrap;
+      text-decoration: none;
+      min-height: 40px;
+    }
+
+    .btn:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+
+    .btn-record {
+      background: var(--danger);
+      color: #ffffff;
+      border-color: var(--danger);
+      width: 100%;
+    }
+
+    .btn-record:hover:not(:disabled) {
+      background: var(--danger-hover);
+      border-color: var(--danger-hover);
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: #ffffff;
+      border-color: var(--success);
+    }
+
+    .btn-success:hover:not(:disabled) {
+      background: var(--success-hover);
+      border-color: var(--success-hover);
+    }
+
+    .btn-stop {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    .btn-stop:hover:not(:disabled) {
+      background: var(--danger);
+      color: #ffffff;
+      border-color: var(--danger);
+    }
+
+    .btn-stop.active-stop {
+      background: var(--danger);
+      color: #ffffff;
+      border-color: var(--danger);
+      animation: pulse-glow 1s infinite;
+    }
+
+    .btn-secondary {
+      background: var(--surface-subtle);
+      color: var(--text-main);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--surface-card);
+      border-color: var(--border-hover);
+    }
+
+    .btn-danger-outline {
+      background: transparent;
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    .btn-danger-outline:hover:not(:disabled) {
+      background: var(--danger-bg);
+      border-color: var(--danger);
+    }
+
+    .btn-sm {
+      padding: 0.4rem 0.75rem;
+      font-size: 0.8125rem;
+      min-height: 36px;
+    }
+
+    .btn-icon-only {
+      padding: 0.5rem;
+      min-height: 36px;
+      min-width: 36px;
+    }
+
+    /* Recordings List & Cards */
+    .recordings-list-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-height: 520px;
+      overflow-y: auto;
+      padding-right: 0.25rem;
+    }
+
+    .recording-card {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.85rem 1rem;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+    }
+
+    .recording-card:hover {
+      border-color: var(--border-hover);
+      background: var(--surface-card);
+    }
+
+    .recording-card.selected {
+      border-color: var(--primary);
+      background: rgba(59, 130, 246, 0.08);
+      box-shadow: 0 0 0 1px var(--primary);
+    }
+
+    .card-radio-container {
+      display: flex;
+      align-items: flex-start;
+      padding-top: 0.25rem;
+    }
+
+    .card-radio-container input[type="radio"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    .card-content {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .card-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .rec-name {
+      font-family: var(--font-mono);
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--text-main);
+      overflow-wrap: break-word;
+      word-break: break-all;
+    }
+
+    .duration-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: var(--radius-sm);
+      background: var(--primary-bg);
+      color: var(--primary);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      white-space: nowrap;
+    }
+
+    .card-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+
+    .card-meta-row svg {
+      flex-shrink: 0;
+      color: var(--text-dim);
+    }
+
+    .card-date-row {
+      font-size: 0.775rem;
+      color: var(--text-dim);
+    }
+
+    .card-stats-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-top: 0.2rem;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: var(--surface-input);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    .chip-keys {
+      color: #93c5fd;
+      border-color: rgba(59, 130, 246, 0.2);
+    }
+
+    .chip-clicks {
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.2);
+    }
+
+    .chip-moves {
+      color: #c4b5fd;
+      border-color: rgba(168, 85, 247, 0.2);
+    }
+
+    /* Selected Recording Actions Drawer */
+    .selected-actions-panel {
+      padding: 1.15rem;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      gap: 0.95rem;
+    }
+
+    .selected-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .selected-title-wrap {
+      min-width: 0;
+    }
+
+    .selected-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--text-dim);
+      letter-spacing: 0.05em;
+    }
+
+    .selected-rec-name {
+      font-family: var(--font-mono);
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--primary);
+      overflow-wrap: break-word;
+      word-break: break-all;
+    }
+
+    .actions-buttons-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* Parameters Section */
+    .parameters-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      padding-top: 0.25rem;
+      padding-bottom: 0.85rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .parameters-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .parameters-explanation {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .params-error-msg {
+      padding: 0.65rem 0.85rem;
+      background: var(--danger-bg);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: var(--radius-md);
+      color: #fca5a5;
+      font-size: 0.8125rem;
+      line-height: 1.4;
+      overflow-wrap: break-word;
+    }
+
+    .params-empty-msg {
+      padding: 0.85rem 1rem;
+      background: var(--surface-card);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-dim);
+      font-size: 0.8125rem;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    .params-blocks-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .param-block-card {
+      padding: 0.75rem 0.85rem;
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .param-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .param-block-info {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+
+    .param-block-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+    }
+
+    .param-name-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
+      background: var(--primary-bg);
+      color: var(--primary);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      word-break: break-all;
+    }
+
+    .param-action-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .param-add-form {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .param-name-input {
+      flex: 1;
+      min-width: 140px;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      padding: 0.4rem 0.65rem;
+    }
+
+    .replay-values-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      margin-top: 0.25rem;
+      padding-top: 0.65rem;
+      border-top: 1px dashed var(--border);
+    }
+
+    .replay-values-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .replay-value-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      padding: 0.65rem 0.75rem;
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+    }
+
+    .replay-value-row .checkbox-group {
+      margin-top: 0;
+    }
+
+    .replay-value-input {
+      font-size: 0.875rem;
+      padding: 0.45rem 0.75rem;
+    }
+
+    /* Empty and Loading States */
+    .empty-state {
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--text-dim);
+    }
+
+    .empty-icon {
+      font-size: 2.5rem;
+      opacity: 0.6;
+      margin-bottom: 0.25rem;
+    }
+
+    .empty-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .empty-desc {
+      font-size: 0.8125rem;
+      max-width: 320px;
+    }
+
+    /* Modal Backdrop & Dialog */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      z-index: 1000;
+    }
+
+    .modal-dialog {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      max-width: 440px;
+      width: 100%;
+      overflow: hidden;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      padding: 1.15rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .modal-header h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .modal-body {
+      padding: 1.25rem;
+      font-size: 0.9375rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .modal-target-box {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      padding: 0.65rem 0.85rem;
+      background: var(--surface-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--danger);
+      overflow-wrap: break-word;
+      word-break: break-all;
+    }
+
+    .modal-footer {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Auth View */
+    .auth-container {
+      max-width: 480px;
+      width: 100%;
+      margin: auto;
+      padding: 2rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .auth-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    }
+
+    .auth-header {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .auth-header h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .auth-header p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .command-box {
+      background: var(--surface-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.85rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .command-box-label {
+      font-size: 0.775rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+    }
+
+    .command-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .command-text {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      color: #93c5fd;
+      word-break: break-all;
+    }
+
+    .auth-error-msg {
+      padding: 0.75rem 1rem;
+      background: var(--danger-bg);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: var(--radius-md);
+      color: #fca5a5;
+      font-size: 0.875rem;
+      display: none;
+    }
+
+    /* Toast Notification System */
+    .toast-container {
+      position: fixed;
+      top: 1.25rem;
+      right: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      z-index: 2000;
+      pointer-events: none;
+      max-width: 380px;
+      width: calc(100% - 2.5rem);
+    }
+
+    .toast {
+      pointer-events: auto;
+      padding: 0.85rem 1.15rem;
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-main);
+      font-size: 0.875rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      animation: toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: opacity 0.25s, transform 0.25s;
+    }
+
+    .toast-success {
+      border-color: rgba(16, 185, 129, 0.5);
+      background: linear-gradient(90deg, rgba(16, 185, 129, 0.1), var(--surface-card));
+    }
+
+    .toast-error {
+      border-color: rgba(239, 68, 68, 0.5);
+      background: linear-gradient(90deg, rgba(239, 68, 68, 0.1), var(--surface-card));
+    }
+
+    .toast-info {
+      border-color: rgba(59, 130, 246, 0.5);
+      background: linear-gradient(90deg, rgba(59, 130, 246, 0.1), var(--surface-card));
+    }
+
+    @keyframes toast-in {
+      from { transform: translateY(-10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Responsive Breakdown <= 760px */
+    @media (max-width: 760px) {
+      .app-wrapper {
+        padding: 0.75rem;
+        gap: 0.85rem;
+      }
+
+      .app-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.85rem;
+        padding: 1rem;
+      }
+
+      .brand-section {
+        justify-content: space-between;
+      }
+
+      .header-actions {
+        width: 100%;
+        justify-content: stretch;
+      }
+
+      .header-actions .btn {
+        flex: 1;
+      }
+
+      .app-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .form-row-2 {
+        grid-template-columns: 1fr;
+      }
+
+      .btn {
+        min-height: 44px;
+        padding: 0.75rem 1.25rem;
+      }
+
+      .input-control, .select-control {
+        min-height: 44px;
+        font-size: 16px; /* Avoid iOS automatic input zoom */
+      }
+
+      .recording-card {
+        padding: 1rem;
+      }
+
+      .toast-container {
+        left: 1.25rem;
+        right: 1.25rem;
+        width: auto;
+      }
+
+      .param-add-form {
+        width: 100%;
+      }
+
+      .param-name-input {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .param-add-form .btn {
+        width: 100%;
+      }
+
+      .param-action-row .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- AUTHENTICATION VIEW -->
+  <main id="auth-view" class="auth-container" style="display: none;">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
+            <path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"></path>
+          </svg>
+        </div>
+        <h1>Input Reply</h1>
+        <p>Connect to the local desktop macro automation server</p>
+      </div>
+
+      <div class="command-box">
+        <span class="command-box-label">Step 1: Obtain Access Token</span>
+        <div class="command-row">
+          <span class="command-text">input-reply token</span>
+          <button type="button" id="copy-cmd-btn" class="btn btn-secondary btn-sm" aria-label="Copy CLI token command">
+            Copy
+          </button>
+        </div>
+        <span class="form-help">Run this command in a terminal on the host computer to display your secure access code.</span>
+      </div>
+
+      <form id="auth-form" class="form-group" style="gap: 1rem;">
+        <span class="command-box-label">Step 2: Enter Access Code</span>
+        <div class="form-group">
+          <label for="auth-token-input">Access Token <span class="required" aria-hidden="true">*</span></label>
+          <div class="input-row">
+            <input type="password" id="auth-token-input" class="input-control" placeholder="Paste access token here" autocomplete="off" required>
+            <button type="button" id="toggle-pwd-btn" class="btn btn-secondary btn-sm" aria-label="Show or hide token">
+              Show
+            </button>
+          </div>
+          <span class="form-help">Kept in this browser tab until you close it.</span>
+        </div>
+
+        <div id="auth-error" class="auth-error-msg" role="alert"></div>
+
+        <button type="submit" id="auth-submit-btn" class="btn btn-primary" style="width: 100%;">
+          Connect to Dashboard
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <!-- MAIN APPLICATION VIEW -->
+  <div id="app-view" class="app-wrapper" style="display: none;">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
+            <path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">Input Reply</h1>
+        </div>
+      </div>
+
+      <div class="header-status-group">
+        <div class="status-pill" id="desktop-status-pill" title="X11 Desktop Connection">
+          <span class="status-dot dot-offline" id="desktop-dot"></span>
+          <span id="desktop-text">Checking desktop…</span>
+        </div>
+        <span class="status-phase-badge phase-idle" id="header-phase-badge">IDLE</span>
+      </div>
+
+      <div class="header-actions">
+        <button type="button" id="header-stop-btn" class="btn btn-stop btn-sm" disabled aria-label="Stop active macro">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+          </svg>
+          Stop Macro
+        </button>
+        <button type="button" id="disconnect-btn" class="btn btn-secondary btn-sm" title="Log out and change token">
+          Disconnect
+        </button>
+      </div>
+    </header>
+
+    <!-- Security Warning Banner -->
+    <div class="security-banner" role="alert">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <div>
+        <strong>Security Notice:</strong> Macro recordings capture raw keyboard and mouse input events on the host system. Do not type passwords, secrets, financial data, or sensitive credentials while recording is active.
+      </div>
+    </div>
+
+    <!-- Job Status Monitor Bar -->
+    <section class="job-monitor-card" id="job-monitor-card" aria-label="Current Job Status">
+      <div class="job-info">
+        <div class="job-header-row">
+          <span class="status-phase-badge phase-idle" id="job-phase-badge">IDLE</span>
+          <span style="font-size: 0.8125rem; color: var(--text-dim);">Live Status</span>
+        </div>
+        <p class="job-message" id="job-message">Ready</p>
+      </div>
+      <div>
+        <button type="button" id="job-stop-btn" class="btn btn-stop btn-sm" disabled aria-label="Stop current running job">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+          </svg>
+          Stop
+        </button>
+      </div>
+    </section>
+
+    <!-- Main Dashboard Grid -->
+    <main class="app-layout">
+      <!-- COLUMN 1: RECORD NEW MACRO -->
+      <section class="card record-card" aria-labelledby="record-heading">
+        <div class="card-header">
+          <h2 class="card-title" id="record-heading">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+            </svg>
+            New Recording
+          </h2>
+        </div>
+        <form id="record-form" class="card-body">
+          <!-- Target Window Selection (REQUIRED) -->
+          <div class="form-group">
+            <label for="rec-window">Target Desktop Window <span class="required" aria-hidden="true">*</span></label>
+            <div class="input-row">
+              <select id="rec-window" class="select-control" required aria-required="true">
+                <option value="">-- Choose target window (required) --</option>
+              </select>
+              <button type="button" id="refresh-windows-btn" class="btn btn-secondary btn-icon-only" title="Refresh visible desktop windows">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                </svg>
+              </button>
+            </div>
+            <span class="form-help">The app focuses the selected window when your desktop supports it. Otherwise, focus the window during the countdown.</span>
+          </div>
+
+          <!-- Recording Name -->
+          <div class="form-group">
+            <label for="rec-name">Friendly Name</label>
+            <input type="text" id="rec-name" class="input-control" placeholder="macro" value="macro" maxlength="60" pattern="[A-Za-z0-9._-]+" title="Letters, numbers, dots, dashes, underscores">
+            <span class="form-help">Valid filename characters only. The .json extension will be appended automatically.</span>
+          </div>
+
+          <!-- Duration & Countdown Row -->
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="rec-duration">Duration (sec)</label>
+              <input type="number" id="rec-duration" class="input-control" min="1" max="300" step="1" value="30" required>
+              <span class="form-help">1 to 300 seconds</span>
+            </div>
+            <div class="form-group">
+              <label for="rec-countdown">Countdown (sec)</label>
+              <input type="number" id="rec-countdown" class="input-control" min="0" max="30" step="1" value="3" required>
+              <span class="form-help">0 to 30 lead time</span>
+            </div>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" id="record-btn" class="btn btn-record" style="margin-top: 0.5rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="12" r="8"></circle>
+            </svg>
+            Start Recording
+          </button>
+        </form>
+      </section>
+
+      <!-- COLUMN 2: RECORDINGS & ACTIONS -->
+      <section class="card recordings-card" aria-labelledby="recordings-heading">
+        <div class="card-header">
+          <h2 class="card-title" id="recordings-heading">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Saved Recordings
+            <span id="recordings-count-badge" class="chip" style="margin-left: 0.25rem;">0</span>
+          </h2>
+          <button type="button" id="refresh-recordings-btn" class="btn btn-secondary btn-sm" title="Refresh saved recordings list">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+            </svg>
+            Refresh
+          </button>
+        </div>
+
+        <div class="card-body">
+          <!-- Recordings List Container -->
+          <div id="recordings-list" class="recordings-list-container" role="radiogroup" aria-label="Available macro recordings">
+            <!-- Dynamically populated via textContent safe DOM methods -->
+          </div>
+
+          <!-- Selected Recording Action Panel -->
+          <div id="selected-actions-panel" class="selected-actions-panel" style="display: none;">
+            <div class="selected-header">
+              <div class="selected-title-wrap">
+                <div class="selected-label">Selected Recording</div>
+                <div class="selected-rec-name" id="selected-rec-name">macro.json</div>
+              </div>
+            </div>
+
+            <!-- Parameters Section -->
+            <div id="parameters-section" class="parameters-section">
+              <div class="parameters-header">
+                <span class="selected-label">Parameters</span>
+              </div>
+              <p class="parameters-explanation">Name a typing block after recording, then enter replacement text for a replay. Recorded text is never previewed here.</p>
+              
+              <div id="params-error" class="params-error-msg" role="alert" style="display: none;"></div>
+
+              <div id="params-loading" class="form-help" style="display: none;">Loading typing blocks…</div>
+
+              <div id="params-empty" class="params-empty-msg" style="display: none;">No typing blocks found. Record some text with pauses or clicks between fields.</div>
+
+              <div id="params-blocks-container" class="params-blocks-container"></div>
+
+              <!-- Replay Parameter Values Subsection -->
+              <div id="replay-values-section" class="replay-values-section" style="display: none;">
+                <div class="parameters-header">
+                  <span class="selected-label">Parameter Replay Values</span>
+                </div>
+                <div id="replay-values-container" class="replay-values-container"></div>
+              </div>
+            </div>
+
+            <!-- Replay Options Grid -->
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="replay-target-override">Target Window</label>
+                <select id="replay-target-override" class="select-control">
+                  <option value="">Default: Use recorded window</option>
+                </select>
+                <span class="form-help">Use the saved target, or choose an open window for older recordings.</span>
+              </div>
+              <div class="form-group">
+                <label for="replay-countdown">Replay Countdown (sec)</label>
+                <input type="number" id="replay-countdown" class="input-control" min="0" max="30" step="1" value="3">
+                <span class="form-help">0 to 30 seconds lead time</span>
+              </div>
+            </div>
+
+            <div class="checkbox-group">
+              <input type="checkbox" id="replay-preserve-keys">
+              <div>
+                <label for="replay-preserve-keys" class="checkbox-label">Repeat keys while held</label>
+                <div class="form-help">Replays synthetic repeat events for keys that were held down (default OFF).</div>
+              </div>
+            </div>
+
+            <div class="actions-buttons-row">
+              <button type="button" id="replay-btn" class="btn btn-success" style="flex: 1;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                Replay Macro
+              </button>
+              <button type="button" id="delete-btn" class="btn btn-danger-outline" aria-label="Delete selected recording">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- DELETE CONFIRMATION MODAL DIALOG -->
+  <div id="delete-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--danger);" aria-hidden="true">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+        <h3 id="delete-dialog-title">Delete Recording?</h3>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to permanently delete this macro recording? This action cannot be undone.</p>
+        <div class="modal-target-box" id="delete-modal-target-name">filename.json</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="delete-modal-cancel-btn" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="delete-modal-confirm-btn" class="btn btn-record" style="width: auto;">Permanently Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // Storage keys & application state
+      const TOKEN_KEY = 'inputReplyToken';
+
+      let currentStatus = { phase: 'idle', busy: false, message: 'Ready' };
+      let previousBusy = false;
+      let previousPhase = 'idle';
+      let pollTimer = null;
+
+      let windowsList = [];
+      let recordingsList = [];
+      let selectedRecording = null;
+      let deleteTargetRecording = null;
+      let inspectData = null;
+      let inspectLoading = false;
+      let inspectRequestId = 0;
+      let currentInspectedName = null;
+      let replayParamValues = {};
+
+      // DOM Elements
+      const authView = document.getElementById('auth-view');
+      const appView = document.getElementById('app-view');
+      const authForm = document.getElementById('auth-form');
+      const authTokenInput = document.getElementById('auth-token-input');
+      const authSubmitBtn = document.getElementById('auth-submit-btn');
+      const authError = document.getElementById('auth-error');
+      const togglePwdBtn = document.getElementById('toggle-pwd-btn');
+      const copyCmdBtn = document.getElementById('copy-cmd-btn');
+      const disconnectBtn = document.getElementById('disconnect-btn');
+
+      const desktopDot = document.getElementById('desktop-dot');
+      const desktopText = document.getElementById('desktop-text');
+      const headerPhaseBadge = document.getElementById('header-phase-badge');
+      const headerStopBtn = document.getElementById('header-stop-btn');
+
+      const jobMonitorCard = document.getElementById('job-monitor-card');
+      const jobPhaseBadge = document.getElementById('job-phase-badge');
+      const jobMessage = document.getElementById('job-message');
+      const jobStopBtn = document.getElementById('job-stop-btn');
+
+      const recordForm = document.getElementById('record-form');
+      const recWindowSelect = document.getElementById('rec-window');
+      const recNameInput = document.getElementById('rec-name');
+      const recDurationInput = document.getElementById('rec-duration');
+      const recCountdownInput = document.getElementById('rec-countdown');
+      const recordBtn = document.getElementById('record-btn');
+      const refreshWindowsBtn = document.getElementById('refresh-windows-btn');
+
+      const recordingsListContainer = document.getElementById('recordings-list');
+      const recordingsCountBadge = document.getElementById('recordings-count-badge');
+      const refreshRecordingsBtn = document.getElementById('refresh-recordings-btn');
+
+      const selectedActionsPanel = document.getElementById('selected-actions-panel');
+      const selectedRecNameEl = document.getElementById('selected-rec-name');
+      const parametersSection = document.getElementById('parameters-section');
+      const paramsErrorEl = document.getElementById('params-error');
+      const paramsLoadingEl = document.getElementById('params-loading');
+      const paramsEmptyEl = document.getElementById('params-empty');
+      const paramsBlocksContainer = document.getElementById('params-blocks-container');
+      const replayValuesSection = document.getElementById('replay-values-section');
+      const replayValuesContainer = document.getElementById('replay-values-container');
+      const replayOverrideSelect = document.getElementById('replay-target-override');
+      const replayCountdownInput = document.getElementById('replay-countdown');
+      const replayPreserveCheckbox = document.getElementById('replay-preserve-keys');
+      const replayBtn = document.getElementById('replay-btn');
+      const deleteBtn = document.getElementById('delete-btn');
+
+      const deleteModal = document.getElementById('delete-modal');
+      const deleteModalTargetName = document.getElementById('delete-modal-target-name');
+      const deleteModalCancelBtn = document.getElementById('delete-modal-cancel-btn');
+      const deleteModalConfirmBtn = document.getElementById('delete-modal-confirm-btn');
+
+      const toastContainer = document.getElementById('toast-container');
+
+      // Helper: Toast Notifications (safely rendered using textContent)
+      function showToast(message, type) {
+        type = type || 'info';
+        const toast = document.createElement('div');
+        toast.className = 'toast toast-' + type;
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = String(message);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.style.background = 'none';
+        closeBtn.style.border = 'none';
+        closeBtn.style.color = 'inherit';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.style.padding = '0.2rem';
+        closeBtn.style.fontSize = '1.1rem';
+        closeBtn.style.lineHeight = '1';
+        closeBtn.textContent = '×';
+        closeBtn.setAttribute('aria-label', 'Dismiss notification');
+
+        toast.appendChild(textSpan);
+        toast.appendChild(closeBtn);
+        toastContainer.appendChild(toast);
+
+        let timeoutId = setTimeout(function () {
+          dismiss();
+        }, 4500);
+
+        function dismiss() {
+          clearTimeout(timeoutId);
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateY(-10px)';
+          setTimeout(function () {
+            if (toast.parentNode) {
+              toast.parentNode.removeChild(toast);
+            }
+          }, 300);
+        }
+
+        closeBtn.addEventListener('click', dismiss);
+      }
+
+      // Helper: Button Loading state
+      function setButtonLoading(btn, isLoading, loadingText) {
+        if (!btn) return;
+        if (isLoading) {
+          if (!btn.dataset.originalText) {
+            btn.dataset.originalText = btn.textContent;
+          }
+          btn.disabled = true;
+          btn.textContent = loadingText || 'Processing…';
+        } else {
+          btn.disabled = false;
+          if (btn.dataset.originalText) {
+            btn.textContent = btn.dataset.originalText;
+            delete btn.dataset.originalText;
+          }
+        }
+      }
+
+      // Token Management
+      function getToken() {
+        return sessionStorage.getItem(TOKEN_KEY) || '';
+      }
+
+      function setToken(token) {
+        sessionStorage.setItem(TOKEN_KEY, token);
+      }
+
+      function clearToken() {
+        sessionStorage.removeItem(TOKEN_KEY);
+      }
+
+      // Safe API fetcher
+      async function apiFetch(path, options) {
+        options = options || {};
+        const token = getToken();
+        if (!token) {
+          showLoginView('Access code required to proceed.');
+          throw new Error('Authentication required');
+        }
+
+        const headers = Object.assign({
+          'Authorization': 'Bearer ' + token
+        }, options.headers || {});
+
+        if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+          headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(options.body);
+        }
+
+        let res;
+        try {
+          res = await fetch(path, Object.assign({}, options, { headers: headers }));
+        } catch (netErr) {
+          throw new Error('Unable to connect to server. Check your network or verify the server is running.');
+        }
+
+        if (res.status === 401) {
+          clearToken();
+          stopPolling();
+          showLoginView('Access code is invalid or has expired. Please log in again.');
+          throw new Error('Unauthorized');
+        }
+
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (jsonErr) {
+          if (!res.ok) {
+            throw new Error('Server returned HTTP ' + res.status);
+          }
+        }
+
+        if (!res.ok) {
+          const errMessage = (data && data.error) ? data.error : ('Request failed (' + res.status + ')');
+          throw new Error(errMessage);
+        }
+
+        return data;
+      }
+
+      // Date Formatter
+      function formatDateTime(isoString) {
+        if (!isoString) return 'Date unknown';
+        try {
+          const d = new Date(isoString);
+          if (isNaN(d.getTime())) return String(isoString);
+          return d.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          }) + ' at ' + d.toLocaleTimeString(undefined, {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+        } catch (e) {
+          return String(isoString);
+        }
+      }
+
+      // UI View Switchers
+      function showLoginView(errorMessage) {
+        stopPolling();
+        selectedRecording = null;
+        currentInspectedName = null;
+        inspectData = null;
+        replayParamValues = {};
+        appView.style.display = 'none';
+        authView.style.display = 'flex';
+        authTokenInput.value = '';
+        if (errorMessage) {
+          authError.textContent = errorMessage;
+          authError.style.display = 'block';
+        } else {
+          authError.textContent = '';
+          authError.style.display = 'none';
+        }
+        authTokenInput.focus();
+      }
+
+      function showAppView() {
+        authView.style.display = 'none';
+        appView.style.display = 'flex';
+        startPolling();
+        loadWindows();
+        loadRecordings();
+      }
+
+      // Render Job Status
+      function renderStatus(status) {
+        currentStatus = status || { phase: 'idle', busy: false, message: 'Ready' };
+
+        const phase = (currentStatus.phase || 'idle').toLowerCase();
+        const isBusy = Boolean(currentStatus.busy);
+
+        // Header Phase badge
+        headerPhaseBadge.textContent = phase.toUpperCase();
+        headerPhaseBadge.className = 'status-phase-badge phase-' + phase;
+
+        // Job Monitor Phase badge
+        jobPhaseBadge.textContent = phase.toUpperCase();
+        jobPhaseBadge.className = 'status-phase-badge phase-' + phase;
+
+        // Desktop connection status
+        const isDesktopAvail = Boolean(currentStatus.desktop_available);
+        const displayLabel = currentStatus.display || 'desktop';
+        desktopDot.className = 'status-dot ' + (isDesktopAvail ? 'dot-online' : 'dot-offline');
+        desktopText.textContent = displayLabel + (isDesktopAvail ? ' • Desktop Active' : ' • Desktop Offline');
+
+        // Status Message (using textContent!)
+        jobMessage.textContent = currentStatus.message || (isDesktopAvail ? 'Ready' : 'Desktop unavailable');
+
+        // Button states depending on busy state
+        if (isBusy) {
+          jobMonitorCard.classList.add('is-busy');
+          headerStopBtn.disabled = false;
+          headerStopBtn.classList.add('active-stop');
+          jobStopBtn.disabled = false;
+          jobStopBtn.classList.add('active-stop');
+
+          recordBtn.disabled = true;
+          replayBtn.disabled = true;
+          deleteBtn.disabled = true;
+          updateParamControlStates(true);
+        } else {
+          jobMonitorCard.classList.remove('is-busy');
+          headerStopBtn.disabled = true;
+          headerStopBtn.classList.remove('active-stop');
+          jobStopBtn.disabled = true;
+          jobStopBtn.classList.remove('active-stop');
+
+          recordBtn.disabled = !isDesktopAvail;
+          replayBtn.disabled = !selectedRecording || !isDesktopAvail;
+          deleteBtn.disabled = !selectedRecording;
+          updateParamControlStates(false);
+        }
+      }
+
+      // Status Polling
+      async function pollStatus() {
+        if (!getToken()) return;
+        try {
+          const status = await apiFetch('/api/status');
+          const wasBusy = previousBusy;
+          const prevPhase = previousPhase;
+
+          renderStatus(status);
+
+          previousBusy = Boolean(status.busy);
+          previousPhase = status.phase || 'idle';
+
+          // When job transitions to done (or busy -> false)
+          if ((wasBusy && !status.busy) || (status.phase === 'done' && prevPhase !== 'done')) {
+            await loadRecordings();
+            await loadWindows();
+          }
+        } catch (err) {
+          // Handled in apiFetch if 401
+        }
+      }
+
+      function startPolling() {
+        stopPolling();
+        pollStatus();
+        pollTimer = setInterval(pollStatus, 1000);
+      }
+
+      function stopPolling() {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      // Load Windows list
+      async function loadWindows() {
+        setButtonLoading(refreshWindowsBtn, true, '…');
+        try {
+          const data = await apiFetch('/api/windows');
+          windowsList = Array.isArray(data.windows) ? data.windows : [];
+          renderWindowsSelect();
+          renderReplayOverrideSelect();
+        } catch (err) {
+          showToast('Failed to retrieve desktop windows: ' + err.message, 'error');
+        } finally {
+          setButtonLoading(refreshWindowsBtn, false, '');
+          refreshWindowsBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>';
+        }
+      }
+
+      // Populate Target Window Select for Recording (REQUIRED)
+      function renderWindowsSelect() {
+        const savedVal = recWindowSelect.value;
+        recWindowSelect.textContent = ''; // Clear safely
+
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '-- Choose target window (required) --';
+        recWindowSelect.appendChild(defaultOption);
+
+        if (windowsList.length === 0) {
+          const noneOption = document.createElement('option');
+          noneOption.value = '';
+          noneOption.disabled = true;
+          noneOption.textContent = 'No open desktop windows detected';
+          recWindowSelect.appendChild(noneOption);
+          return;
+        }
+
+        let preserved = false;
+        windowsList.forEach(function (win) {
+          const opt = document.createElement('option');
+          opt.value = String(win.id);
+          // Set textContent strictly: NEVER innerHTML
+          opt.textContent = String(win.title) + ' [ID: ' + win.id + ']';
+          if (String(win.id) === String(savedVal)) {
+            opt.selected = true;
+            preserved = true;
+          }
+          recWindowSelect.appendChild(opt);
+        });
+
+        if (!preserved) {
+          defaultOption.selected = true;
+        }
+      }
+
+      // Populate Replay Override Window Select
+      function renderReplayOverrideSelect() {
+        const savedVal = replayOverrideSelect.value;
+        replayOverrideSelect.textContent = ''; // Clear safely
+
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        if (selectedRecording && selectedRecording.target && selectedRecording.target !== 'Unknown window') {
+          defaultOption.textContent = 'Default: Use saved target ("' + selectedRecording.target + '")';
+        } else if (selectedRecording) {
+          defaultOption.textContent = 'Choose a target window for this older recording';
+        } else {
+          defaultOption.textContent = 'Default: Use saved target window';
+        }
+        replayOverrideSelect.appendChild(defaultOption);
+
+        let preserved = false;
+        windowsList.forEach(function (win) {
+          const opt = document.createElement('option');
+          opt.value = String(win.id);
+          opt.textContent = 'Override: ' + String(win.title) + ' [ID: ' + win.id + ']';
+          if (String(win.id) === String(savedVal)) {
+            opt.selected = true;
+            preserved = true;
+          }
+          replayOverrideSelect.appendChild(opt);
+        });
+
+        if (!preserved) {
+          defaultOption.selected = true;
+        }
+      }
+
+      // Load Recordings list
+      async function loadRecordings() {
+        setButtonLoading(refreshRecordingsBtn, true, 'Refreshing…');
+        try {
+          const data = await apiFetch('/api/recordings');
+          recordingsList = Array.isArray(data.recordings) ? data.recordings : [];
+          recordingsCountBadge.textContent = String(recordingsList.length);
+          renderRecordingsList();
+        } catch (err) {
+          showToast('Failed to load recordings: ' + err.message, 'error');
+        } finally {
+          setButtonLoading(refreshRecordingsBtn, false, 'Refresh');
+          refreshRecordingsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg> Refresh';
+        }
+      }
+
+      // Render Recordings List safely using DOM nodes and textContent
+      function renderRecordingsList() {
+        recordingsListContainer.textContent = ''; // Clear safely
+
+        if (recordingsList.length === 0) {
+          const emptyState = document.createElement('div');
+          emptyState.className = 'empty-state';
+
+          const iconDiv = document.createElement('div');
+          iconDiv.className = 'empty-icon';
+          iconDiv.textContent = '📁';
+
+          const titleP = document.createElement('p');
+          titleP.className = 'empty-title';
+          titleP.textContent = 'No recordings found';
+
+          const descP = document.createElement('p');
+          descP.className = 'empty-desc';
+          descP.textContent = 'Recordings created with the form on the left will appear here.';
+
+          emptyState.appendChild(iconDiv);
+          emptyState.appendChild(titleP);
+          emptyState.appendChild(descP);
+          recordingsListContainer.appendChild(emptyState);
+
+          selectedRecording = null;
+          updateSelectedUI();
+          return;
+        }
+
+        // Verify if previously selected recording is still in the list
+        if (selectedRecording) {
+          const exists = recordingsList.find(function (r) { return r.name === selectedRecording.name; });
+          if (!exists) {
+            selectedRecording = null;
+          } else {
+            selectedRecording = exists;
+          }
+        }
+
+        recordingsList.forEach(function (rec) {
+          const isSelected = selectedRecording && selectedRecording.name === rec.name;
+
+          const card = document.createElement('div');
+          card.className = 'recording-card' + (isSelected ? ' selected' : '');
+          card.setAttribute('role', 'radio');
+          card.setAttribute('tabindex', '0');
+          card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+          card.setAttribute('aria-label', 'Recording ' + rec.name);
+
+          // Radio container
+          const radioContainer = document.createElement('div');
+          radioContainer.className = 'card-radio-container';
+          const radioInput = document.createElement('input');
+          radioInput.type = 'radio';
+          radioInput.name = 'macro_recording_selection';
+          radioInput.checked = isSelected;
+          radioInput.setAttribute('aria-label', 'Select ' + rec.name);
+          radioContainer.appendChild(radioInput);
+          card.appendChild(radioContainer);
+
+          // Content container
+          const content = document.createElement('div');
+          content.className = 'card-content';
+
+          // Header row: Name & Duration badge
+          const headerRow = document.createElement('div');
+          headerRow.className = 'card-header-row';
+
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'rec-name';
+          nameSpan.textContent = String(rec.name);
+
+          const durationBadge = document.createElement('span');
+          durationBadge.className = 'duration-badge';
+          durationBadge.textContent = Number(rec.duration || 0).toFixed(1) + 's';
+
+          headerRow.appendChild(nameSpan);
+          headerRow.appendChild(durationBadge);
+          content.appendChild(headerRow);
+
+          // Target window row
+          const targetRow = document.createElement('div');
+          targetRow.className = 'card-meta-row';
+
+          const targetSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          targetSvg.setAttribute('width', '14');
+          targetSvg.setAttribute('height', '14');
+          targetSvg.setAttribute('viewBox', '0 0 24 24');
+          targetSvg.setAttribute('fill', 'none');
+          targetSvg.setAttribute('stroke', 'currentColor');
+          targetSvg.setAttribute('stroke-width', '2');
+          targetSvg.setAttribute('stroke-linecap', 'round');
+          targetSvg.setAttribute('stroke-linejoin', 'round');
+          targetSvg.setAttribute('aria-hidden', 'true');
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', '2');
+          rect.setAttribute('y', '3');
+          rect.setAttribute('width', '20');
+          rect.setAttribute('height', '14');
+          rect.setAttribute('rx', '2');
+          rect.setAttribute('ry', '2');
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', '8');
+          line.setAttribute('y1', '21');
+          line.setAttribute('x2', '16');
+          line.setAttribute('y2', '21');
+          const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line2.setAttribute('x1', '12');
+          line2.setAttribute('y1', '17');
+          line2.setAttribute('x2', '12');
+          line2.setAttribute('y2', '21');
+          targetSvg.appendChild(rect);
+          targetSvg.appendChild(line);
+          targetSvg.appendChild(line2);
+
+          const targetText = document.createElement('span');
+          targetText.textContent = String(rec.target || 'Unknown window');
+
+          targetRow.appendChild(targetSvg);
+          targetRow.appendChild(targetText);
+          content.appendChild(targetRow);
+
+          // Date row
+          const dateRow = document.createElement('div');
+          dateRow.className = 'card-date-row';
+          dateRow.textContent = formatDateTime(rec.recorded_at);
+          content.appendChild(dateRow);
+
+          // Stats chips row
+          const statsRow = document.createElement('div');
+          statsRow.className = 'card-stats-row';
+
+          const keysChip = document.createElement('span');
+          keysChip.className = 'chip chip-keys';
+          keysChip.textContent = '⌨ ' + (rec.keys || 0) + ' keys';
+
+          const clicksChip = document.createElement('span');
+          clicksChip.className = 'chip chip-clicks';
+          clicksChip.textContent = '🖱 ' + (rec.clicks || 0) + ' clicks';
+
+          const movesChip = document.createElement('span');
+          movesChip.className = 'chip chip-moves';
+          movesChip.textContent = '↔ ' + (rec.moves || 0) + ' moves';
+
+          statsRow.appendChild(keysChip);
+          statsRow.appendChild(clicksChip);
+          statsRow.appendChild(movesChip);
+          content.appendChild(statsRow);
+
+          card.appendChild(content);
+
+          // Event handlers for selection
+          function selectThis() {
+            if (!selectedRecording || selectedRecording.name !== rec.name) {
+              replayParamValues = {};
+            }
+            selectedRecording = rec;
+            renderRecordingsList();
+            updateSelectedUI();
+          }
+
+          card.addEventListener('click', selectThis);
+          card.addEventListener('keydown', function (e) {
+            if (e.key === ' ' || e.key === 'Enter') {
+              e.preventDefault();
+              selectThis();
+            }
+          });
+
+          recordingsListContainer.appendChild(card);
+        });
+
+        updateSelectedUI();
+      }
+
+      // Update parameter controls disabled status
+      function updateParamControlStates(isBusy) {
+        if (!parametersSection) return;
+        const controls = parametersSection.querySelectorAll('button, input');
+        controls.forEach(function (ctrl) {
+          ctrl.disabled = isBusy;
+        });
+      }
+
+      // Save user-entered replay values into in-memory store before re-render
+      function saveCurrentReplayInputs() {
+        if (inspectData && Array.isArray(inspectData.parameters)) {
+          inspectData.parameters.forEach(function (p) {
+            const cb = document.getElementById('replay-param-cb-' + p.name);
+            const valInput = document.getElementById('replay-param-val-' + p.name);
+            if (cb && valInput) {
+              replayParamValues[p.name] = {
+                checked: cb.checked,
+                value: valInput.value
+              };
+            }
+          });
+        }
+      }
+
+      // Load inspect data from server
+      async function loadInspect(recordingName) {
+        if (!recordingName) {
+          inspectData = null;
+          renderInspect();
+          return;
+        }
+
+        const thisReqId = ++inspectRequestId;
+        inspectLoading = true;
+        paramsErrorEl.style.display = 'none';
+        paramsErrorEl.textContent = '';
+        paramsLoadingEl.style.display = 'block';
+
+        try {
+          const data = await apiFetch('/api/inspect?name=' + encodeURIComponent(recordingName));
+          // Ignore stale async response if user switched recordings
+          if (thisReqId !== inspectRequestId || !selectedRecording || selectedRecording.name !== recordingName) {
+            return;
+          }
+          saveCurrentReplayInputs();
+          inspectData = data;
+          renderInspect();
+        } catch (err) {
+          // Ignore stale async response
+          if (thisReqId !== inspectRequestId || !selectedRecording || selectedRecording.name !== recordingName) {
+            return;
+          }
+          inspectData = null;
+          paramsErrorEl.textContent = 'Failed to load parameters: ' + err.message;
+          paramsErrorEl.style.display = 'block';
+          showToast('Failed to inspect recording: ' + err.message, 'error');
+          renderInspect();
+        } finally {
+          if (thisReqId === inspectRequestId) {
+            inspectLoading = false;
+            paramsLoadingEl.style.display = 'none';
+          }
+        }
+      }
+
+      // Render Replay Value Rows for Defined Parameters
+      function renderReplayValues(parameters) {
+        replayValuesContainer.textContent = ''; // safe clear
+        if (!parameters || parameters.length === 0) {
+          replayValuesSection.style.display = 'none';
+          return;
+        }
+
+        replayValuesSection.style.display = 'flex';
+        const isBusy = Boolean(currentStatus && currentStatus.busy);
+
+        parameters.forEach(function (p) {
+          const row = document.createElement('div');
+          row.className = 'replay-value-row';
+
+          const checkboxGroup = document.createElement('div');
+          checkboxGroup.className = 'checkbox-group';
+
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.id = 'replay-param-cb-' + p.name;
+          checkbox.disabled = isBusy;
+          checkbox.checked = Boolean(replayParamValues[p.name] && replayParamValues[p.name].checked);
+
+          const labelWrap = document.createElement('div');
+          const label = document.createElement('label');
+          label.htmlFor = checkbox.id;
+          label.className = 'checkbox-label';
+          label.textContent = 'Change ' + p.name;
+          labelWrap.appendChild(label);
+
+          checkboxGroup.appendChild(checkbox);
+          checkboxGroup.appendChild(labelWrap);
+          row.appendChild(checkboxGroup);
+
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.id = 'replay-param-val-' + p.name;
+          input.className = 'input-control replay-value-input';
+          input.placeholder = 'Replacement text for ' + p.name;
+          input.disabled = isBusy;
+          input.value = (replayParamValues[p.name] && typeof replayParamValues[p.name].value === 'string')
+            ? replayParamValues[p.name].value
+            : '';
+
+          // Update in-memory state on user input
+          checkbox.addEventListener('change', function () {
+            if (!replayParamValues[p.name]) {
+              replayParamValues[p.name] = { checked: false, value: '' };
+            }
+            replayParamValues[p.name].checked = checkbox.checked;
+          });
+
+          input.addEventListener('input', function () {
+            if (!replayParamValues[p.name]) {
+              replayParamValues[p.name] = { checked: false, value: '' };
+            }
+            replayParamValues[p.name].value = input.value;
+          });
+
+          row.appendChild(input);
+          replayValuesContainer.appendChild(row);
+        });
+      }
+
+      // Render Inspect Typing Blocks safely with textContent & createElement
+      function renderInspect() {
+        paramsBlocksContainer.textContent = '';
+        const isBusy = Boolean(currentStatus && currentStatus.busy);
+
+        if (!inspectData) {
+          paramsEmptyEl.style.display = 'none';
+          replayValuesSection.style.display = 'none';
+          return;
+        }
+
+        const blocks = Array.isArray(inspectData.blocks) ? inspectData.blocks : [];
+        if (blocks.length === 0) {
+          paramsEmptyEl.style.display = 'block';
+          replayValuesSection.style.display = 'none';
+          return;
+        }
+
+        paramsEmptyEl.style.display = 'none';
+
+        blocks.forEach(function (b) {
+          const card = document.createElement('div');
+          card.className = 'param-block-card';
+
+          // Header row: block number, time, key count, assigned parameter
+          const headerRow = document.createElement('div');
+          headerRow.className = 'param-block-header';
+
+          const infoGroup = document.createElement('div');
+          infoGroup.className = 'param-block-info';
+
+          // Block number
+          const badge = document.createElement('span');
+          badge.className = 'param-block-badge';
+          badge.textContent = 'Block ' + b.block;
+          infoGroup.appendChild(badge);
+
+          // Time range
+          const timeSpan = document.createElement('span');
+          timeSpan.className = 'chip';
+          const startTime = (typeof b.start === 'number') ? b.start.toFixed(1) : String(b.start);
+          const endTime = (typeof b.end === 'number') ? b.end.toFixed(1) : String(b.end);
+          timeSpan.textContent = '⏱ ' + startTime + 's – ' + endTime + 's';
+          infoGroup.appendChild(timeSpan);
+
+          // Key count
+          const keysSpan = document.createElement('span');
+          keysSpan.className = 'chip chip-keys';
+          keysSpan.textContent = '⌨ ' + (b.keys || 0) + ' keys';
+          infoGroup.appendChild(keysSpan);
+
+          headerRow.appendChild(infoGroup);
+
+          // Action row: parameter name tag & remove button, or input & add button
+          const actionRow = document.createElement('div');
+          actionRow.className = 'param-action-row';
+
+          if (b.parameter) {
+            const nameTag = document.createElement('span');
+            nameTag.className = 'param-name-tag';
+            nameTag.textContent = 'Param: ' + b.parameter;
+            headerRow.appendChild(nameTag);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'btn btn-danger-outline btn-sm';
+            removeBtn.textContent = 'Remove';
+            removeBtn.disabled = isBusy;
+            removeBtn.setAttribute('aria-label', 'Remove parameter ' + b.parameter + ' from block ' + b.block);
+            removeBtn.addEventListener('click', function () {
+              if (selectedRecording) {
+                handleRemoveParameter(selectedRecording.name, b.parameter, removeBtn);
+              }
+            });
+            actionRow.appendChild(removeBtn);
+          } else {
+            const addForm = document.createElement('div');
+            addForm.className = 'param-add-form';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'input-control param-name-input';
+            input.placeholder = 'New parameter name';
+            input.maxLength = 40;
+            input.pattern = '[A-Za-z_][A-Za-z0-9_]*';
+            input.disabled = isBusy;
+            input.setAttribute('aria-label', 'Parameter name for Block ' + b.block);
+
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn btn-secondary btn-sm';
+            addBtn.textContent = 'Add';
+            addBtn.disabled = isBusy;
+
+            function submitAdd() {
+              if (selectedRecording) {
+                handleAddParameter(selectedRecording.name, b.block, input.value, addBtn);
+              }
+            }
+
+            addBtn.addEventListener('click', submitAdd);
+            input.addEventListener('keydown', function (e) {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitAdd();
+              }
+            });
+
+            addForm.appendChild(input);
+            addForm.appendChild(addBtn);
+            actionRow.appendChild(addForm);
+          }
+
+          card.appendChild(headerRow);
+          card.appendChild(actionRow);
+          paramsBlocksContainer.appendChild(card);
+        });
+
+        renderReplayValues(inspectData.parameters || []);
+      }
+
+      // Add Parameter Handler
+      async function handleAddParameter(recordingName, blockNum, paramName, btn) {
+        if (currentStatus && currentStatus.busy) {
+          showToast('Stop the active macro before editing parameters.', 'warning');
+          return;
+        }
+        const name = String(paramName || '').trim();
+        if (!name) {
+          showToast('Please enter a parameter name.', 'error');
+          return;
+        }
+        if (!/^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(name)) {
+          showToast('Parameter name must start with a letter or underscore and contain only letters, numbers, or underscores (up to 40 characters).', 'error');
+          return;
+        }
+
+        setButtonLoading(btn, true, 'Adding…');
+        try {
+          await apiFetch('/api/parameter/add', {
+            method: 'POST',
+            body: {
+              name: recordingName,
+              block: blockNum,
+              parameter: name
+            }
+          });
+          showToast('Parameter "' + name + '" added.', 'success');
+          await loadInspect(recordingName);
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          setButtonLoading(btn, false, 'Add');
+        }
+      }
+
+      // Remove Parameter Handler
+      async function handleRemoveParameter(recordingName, paramName, btn) {
+        if (currentStatus && currentStatus.busy) {
+          showToast('Stop the active macro before editing parameters.', 'warning');
+          return;
+        }
+        setButtonLoading(btn, true, 'Removing…');
+        try {
+          await apiFetch('/api/parameter/remove', {
+            method: 'POST',
+            body: {
+              name: recordingName,
+              parameter: paramName
+            }
+          });
+          showToast('Parameter "' + paramName + '" removed.', 'success');
+          if (replayParamValues[paramName]) {
+            delete replayParamValues[paramName];
+          }
+          await loadInspect(recordingName);
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          setButtonLoading(btn, false, 'Remove');
+        }
+      }
+
+      // Update Selected Recording Action Panel
+      function updateSelectedUI() {
+        if (!selectedRecording) {
+          selectedActionsPanel.style.display = 'none';
+          replayBtn.disabled = true;
+          deleteBtn.disabled = true;
+          currentInspectedName = null;
+          inspectData = null;
+          replayParamValues = {};
+          renderInspect();
+          return;
+        }
+
+        selectedActionsPanel.style.display = 'flex';
+        selectedRecNameEl.textContent = String(selectedRecording.name);
+
+        renderReplayOverrideSelect();
+
+        if (currentInspectedName !== selectedRecording.name) {
+          currentInspectedName = selectedRecording.name;
+          replayParamValues = {};
+          inspectData = null;
+          renderInspect();
+          loadInspect(selectedRecording.name);
+        }
+
+        const isBusy = Boolean(currentStatus && currentStatus.busy);
+        const isDesktopAvail = Boolean(currentStatus && currentStatus.desktop_available);
+        replayBtn.disabled = isBusy || !isDesktopAvail;
+        deleteBtn.disabled = isBusy;
+        updateParamControlStates(isBusy);
+      }
+
+      // Record Form Submit Handler
+      recordForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const windowId = recWindowSelect.value;
+        if (!windowId || !/^\d+$/.test(windowId)) {
+          showToast('Please select a target desktop window before recording.', 'error');
+          recWindowSelect.focus();
+          return;
+        }
+
+        const nameStem = recNameInput.value.trim() || 'macro';
+        const seconds = parseFloat(recDurationInput.value);
+        if (isNaN(seconds) || seconds < 1 || seconds > 300) {
+          showToast('Duration must be between 1 and 300 seconds.', 'error');
+          recDurationInput.focus();
+          return;
+        }
+
+        const countdown = parseFloat(recCountdownInput.value);
+        if (isNaN(countdown) || countdown < 0 || countdown > 30) {
+          showToast('Countdown must be between 0 and 30 seconds.', 'error');
+          recCountdownInput.focus();
+          return;
+        }
+
+        setButtonLoading(recordBtn, true, 'Starting…');
+        try {
+          const res = await apiFetch('/api/record', {
+            method: 'POST',
+            body: {
+              name: nameStem,
+              seconds: seconds,
+              countdown: countdown,
+              window_id: windowId
+            }
+          });
+          showToast('Recording initiated: ' + (res.name || nameStem), 'success');
+          await pollStatus();
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          setButtonLoading(recordBtn, false, 'Start Recording');
+          recordBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle></svg> Start Recording';
+          recordBtn.disabled = Boolean(currentStatus && currentStatus.busy);
+        }
+      });
+
+      // Replay Action Handler
+      replayBtn.addEventListener('click', async function () {
+        if (!selectedRecording) {
+          showToast('Select a recording to replay.', 'error');
+          return;
+        }
+
+        const countdown = parseFloat(replayCountdownInput.value);
+        if (isNaN(countdown) || countdown < 0 || countdown > 30) {
+          showToast('Replay countdown must be between 0 and 30 seconds.', 'error');
+          replayCountdownInput.focus();
+          return;
+        }
+
+        const overrideVal = replayOverrideSelect.value;
+        const windowId = (overrideVal && /^\d+$/.test(overrideVal)) ? overrideVal : null;
+        if (selectedRecording.target === 'Unknown window' && !windowId) {
+          showToast('Choose a target window for this older recording.', 'error');
+          replayOverrideSelect.focus();
+          return;
+        }
+        const preserveKeys = Boolean(replayPreserveCheckbox.checked);
+
+        // Gather parameter values for replay
+        const params = {};
+        if (inspectData && Array.isArray(inspectData.parameters)) {
+          inspectData.parameters.forEach(function (p) {
+            const cb = document.getElementById('replay-param-cb-' + p.name);
+            const valInput = document.getElementById('replay-param-val-' + p.name);
+            if (cb && cb.checked && valInput) {
+              params[p.name] = valInput.value;
+            }
+          });
+        }
+
+        setButtonLoading(replayBtn, true, 'Starting…');
+        try {
+          const res = await apiFetch('/api/replay', {
+            method: 'POST',
+            body: {
+              name: selectedRecording.name,
+              countdown: countdown,
+              window_id: windowId,
+              preserve_key_holds: preserveKeys,
+              params: params
+            }
+          });
+          showToast('Replay initiated for ' + selectedRecording.name, 'success');
+          await pollStatus();
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          setButtonLoading(replayBtn, false, 'Replay Macro');
+          replayBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Replay Macro';
+          replayBtn.disabled = Boolean(currentStatus && currentStatus.busy);
+        }
+      });
+
+      // Stop Action Handler (Header & Monitor)
+      async function handleStop() {
+        setButtonLoading(headerStopBtn, true, 'Stopping…');
+        setButtonLoading(jobStopBtn, true, 'Stopping…');
+        try {
+          await apiFetch('/api/stop', {
+            method: 'POST',
+            body: {}
+          });
+          showToast('Stop request sent to server.', 'info');
+          await pollStatus();
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          setButtonLoading(headerStopBtn, false, 'Stop Macro');
+          headerStopBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></svg> Stop Macro';
+          setButtonLoading(jobStopBtn, false, 'Stop');
+          jobStopBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></svg> Stop';
+        }
+      }
+
+      headerStopBtn.addEventListener('click', handleStop);
+      jobStopBtn.addEventListener('click', handleStop);
+
+      // Delete Action & Confirmation Modal
+      deleteBtn.addEventListener('click', function () {
+        if (!selectedRecording) return;
+        deleteTargetRecording = selectedRecording;
+        deleteModalTargetName.textContent = String(selectedRecording.name);
+        deleteModal.style.display = 'flex';
+        deleteModalConfirmBtn.focus();
+      });
+
+      function closeDeleteModal() {
+        deleteModal.style.display = 'none';
+        deleteTargetRecording = null;
+      }
+
+      deleteModalCancelBtn.addEventListener('click', closeDeleteModal);
+      deleteModal.addEventListener('click', function (e) {
+        if (e.target === deleteModal) {
+          closeDeleteModal();
+        }
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && deleteModal.style.display === 'flex') {
+          closeDeleteModal();
+        }
+      });
+
+      deleteModalConfirmBtn.addEventListener('click', async function () {
+        if (!deleteTargetRecording) return;
+        const targetName = deleteTargetRecording.name;
+
+        setButtonLoading(deleteModalConfirmBtn, true, 'Deleting…');
+        try {
+          await apiFetch('/api/delete', {
+            method: 'POST',
+            body: { name: targetName }
+          });
+          showToast('Successfully deleted ' + targetName, 'success');
+          closeDeleteModal();
+          if (selectedRecording && selectedRecording.name === targetName) {
+            selectedRecording = null;
+            updateSelectedUI();
+          }
+          await loadRecordings();
+        } catch (err) {
+          showToast('Failed to delete: ' + err.message, 'error');
+        } finally {
+          setButtonLoading(deleteModalConfirmBtn, false, 'Permanently Delete');
+        }
+      });
+
+      // Refresh Buttons
+      refreshWindowsBtn.addEventListener('click', function () {
+        loadWindows();
+      });
+
+      refreshRecordingsBtn.addEventListener('click', function () {
+        loadRecordings();
+      });
+
+      // Authentication Form Submit Handler
+      authForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const token = authTokenInput.value.trim();
+        if (!token) {
+          authError.textContent = 'Please enter an access code.';
+          authError.style.display = 'block';
+          authTokenInput.focus();
+          return;
+        }
+
+        authError.style.display = 'none';
+        setButtonLoading(authSubmitBtn, true, 'Verifying token…');
+
+        try {
+          const res = await fetch('/api/status', {
+            headers: {
+              'Authorization': 'Bearer ' + token
+            }
+          });
+
+          if (res.status === 401) {
+            authError.textContent = 'Invalid access code. Please verify the code generated with input-reply token.';
+            authError.style.display = 'block';
+            authTokenInput.focus();
+            return;
+          }
+
+          if (!res.ok) {
+            authError.textContent = 'Server returned HTTP ' + res.status + '. Check if the server is running properly.';
+            authError.style.display = 'block';
+            return;
+          }
+
+          const status = await res.json();
+          setToken(token);
+          renderStatus(status);
+          showAppView();
+          showToast('Connected to Input Reply', 'success');
+        } catch (netErr) {
+          authError.textContent = 'Cannot connect to server. Ensure the Input Reply server is running.';
+          authError.style.display = 'block';
+        } finally {
+          setButtonLoading(authSubmitBtn, false, 'Connect to Dashboard');
+        }
+      });
+
+      // Copy CLI token command button
+      copyCmdBtn.addEventListener('click', async function () {
+        const cmd = 'input-reply token';
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(cmd);
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = cmd;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+          copyCmdBtn.textContent = 'Copied!';
+          setTimeout(function () { copyCmdBtn.textContent = 'Copy'; }, 2000);
+        } catch (e) {
+          showToast('Failed to copy. Please manually select and copy.', 'error');
+        }
+      });
+
+      // Show/Hide Password Toggle
+      togglePwdBtn.addEventListener('click', function () {
+        if (authTokenInput.type === 'password') {
+          authTokenInput.type = 'text';
+          togglePwdBtn.textContent = 'Hide';
+        } else {
+          authTokenInput.type = 'password';
+          togglePwdBtn.textContent = 'Show';
+        }
+      });
+
+      // Disconnect Handler
+      disconnectBtn.addEventListener('click', function () {
+        clearToken();
+        showLoginView();
+        showToast('Logged out of server session.', 'info');
+      });
+
+      // Initial Bootstrap
+      function init() {
+        const token = getToken();
+        if (token) {
+          // Verify saved token against /api/status
+          fetch('/api/status', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          }).then(function (res) {
+            if (res.status === 401) {
+              clearToken();
+              showLoginView('Previous session expired. Please enter your access code.');
+            } else if (res.ok) {
+              return res.json().then(function (status) {
+                renderStatus(status);
+                showAppView();
+              });
+            } else {
+              showLoginView();
+            }
+          }).catch(function () {
+            // Server might be temporarily unreachable, show login view
+            showLoginView('Unable to connect to server. Ensure it is running.');
+          });
+        } else {
+          showLoginView();
+        }
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "input-reply"
+version = "0.1.0"
+description = "Record and replay desktop macros with editable text parameters"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Ihjas Ahammed"}]
+keywords = ["macro", "automation", "desktop", "wayland", "x11", "windows"]
+dependencies = ["pynput>=1.7.7,<2; platform_system == 'Windows'"]
+
+[project.urls]
+Homepage = "https://github.com/ihjas-ahammed/input-reply"
+Repository = "https://github.com/ihjas-ahammed/input-reply"
+
+[project.scripts]
+input-reply = "input_reply.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+input_reply = ["web.html"]
