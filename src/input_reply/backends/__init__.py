@@ -9,6 +9,8 @@ def select_backend():
     if requested == "auto":
         if sys.platform == "win32":
             requested = "windows"
+        elif os.environ.get("XDG_SESSION_TYPE", "").lower() == "x11":
+            requested = "x11"
         elif os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland" or os.environ.get("WAYLAND_DISPLAY"):
             requested = "wayland"
         else:
