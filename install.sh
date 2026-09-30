@@ -12,7 +12,7 @@ command -v python3 >/dev/null || { echo "python3 (3.10 or newer) is required" >&
 # System site packages lets the app use the distribution's GTK/WebKit and AppIndicator bindings if present.
 python3 -m venv --system-site-packages "$venv"
 "$venv/bin/python" -m pip install --quiet --upgrade pip
-if ! "$venv/bin/python" -m pip install --quiet "$here[desktop]"; then
+if ! "$venv/bin/python" -m pip install --quiet "$here[desktop,ai]"; then
     echo "Desktop extras could not be installed; installing the core app (the dashboard will open in your browser)." >&2
     "$venv/bin/python" -m pip install --quiet "$here"
 fi

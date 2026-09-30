@@ -11,7 +11,9 @@ from pathlib import Path
 from . import core
 
 _LOCK = threading.Lock()
-DEFAULTS = {"remote_enabled": True, "autostart_configured": False}
+DEFAULTS = {"remote_enabled": True, "autostart_configured": False,
+            # Experimental Gemini Live assistant: off until the user enables it in Settings.
+            "ai_enabled": False, "ai_voice": True, "ai_model": "gemini-3.8-flash-live"}
 
 
 def path() -> Path:

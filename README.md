@@ -107,6 +107,18 @@ Safety: commands older than two minutes are marked `expired` and never run; repl
 
 The command channel uses only the Python standard library (Auth and Realtime Database REST, with server-sent events for instant delivery), so there is nothing extra to install.
 
+### Experimental: AI macro assistant
+
+Off by default. Enable it in **Settings** (needs `pip install ".[ai]"`, which `install.sh`/`install.ps1` include) and paste a Gemini API key (or set `GEMINI_API_KEY`). The key is stored only on this computer, in an owner-only file, and is never sent to the cloud sync or shown again.
+
+You type a request such as *open WhatsApp and send Hi to Farsan*. There is no microphone input: your text goes to a Gemini Live model (`gemini-3.8-flash-live` by default, changeable in Settings), which answers by voice on this computer and as a transcript. It sees the screen through screenshots and acts with tools (click, drag, type, keys, scroll, launch an app, open a web address, focus a window, save a screenshot).
+
+- **Designs once.** While it does the task for real, its actions are traced. It then saves them as a macro with named parameters (for example `friend` and `message`). The saved macro shows up in the normal recordings list, the remote web app, and `input-reply remote`, like any other.
+- **Reuses instantly.** Later requests list your saved macros to the model, so a repeat such as *send Hello to Alex* is one `run_macro` call: no screenshots and no exploring.
+- **Guard rails.** Off until enabled; the Stop button interrupts it; at most 80 tool calls per request; it cannot run shell commands; apps must be a plain program name and web addresses must be http(s); on-screen text is treated as data.
+
+It can click and type anywhere you can, and every screenshot it looks at is sent to Google. Use it on a desktop where that is acceptable, and check what it saved. Dragging (drawing) is not available on Wayland. Saved macros replay by coordinates, scaled if the screen size changes, so a moved window or a different layout can break a macro; ask the assistant to redo it.
+
 ### Release builds
 
 `.github/workflows/release.yml` bundles Windows and Linux apps with PyInstaller (manual or on `v*` tags). The recording backends exist for Windows, Linux X11 and Linux Wayland; there is no macOS input backend yet.

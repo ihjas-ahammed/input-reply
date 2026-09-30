@@ -8,7 +8,7 @@ $venv = Join-Path $data "venv"
 py -3 -m venv $venv
 $python = Join-Path $venv "Scripts\python.exe"
 & $python -m pip install --quiet --upgrade pip
-& $python -m pip install --quiet "$here[desktop]"
+& $python -m pip install --quiet "$here[desktop,ai]"
 if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 
 $app = Join-Path $venv "Scripts\input-reply-app.exe"

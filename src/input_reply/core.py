@@ -16,6 +16,7 @@ from threading import Event
 
 FORMAT = "input-reply-v1"
 LEGACY_FORMAT = "codex-x11-input-replay-v1"
+FORMAT_AGENT = "input-reply-agent-v1"   # macro designed by the AI assistant: high-level steps, not raw events
 KINDS = {"motion", "motion_delta", "scroll", "key_down", "key_up", "button_down", "button_up"}
 PARAM_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,39}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.json$")
@@ -105,7 +106,82 @@ def new_name(stem: str) -> str:
         index += 1
 
 
+KEYS_RE = re.compile(r"^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$")
+APP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,59}$")
+BUTTONS = {"left", "right", "middle"}
+
+
+def _coordinate(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 32767
+
+
+def validate_step(step) -> None:
+    if not isinstance(step, dict):
+        raise ValueError("Invalid step")
+    kind = step.get("type")
+    if kind in {"click", "drag"} and step.get("button", "left") not in BUTTONS:
+        raise ValueError("Invalid mouse button")
+    if kind == "click":
+        if not (_coordinate(step.get("x")) and _coordinate(step.get("y"))) or step.get("count", 1) not in (1, 2, 3):
+            raise ValueError("Invalid click step")
+    elif kind == "drag":
+        points = step.get("points")
+        if not isinstance(points, list) or not 2 <= len(points) <= 300 or not all(
+                isinstance(p, list) and len(p) == 2 and all(_coordinate(v) for v in p) for p in points):
+            raise ValueError("Invalid drag step")
+    elif kind == "type":
+        text = step.get("text")
+        if not isinstance(text, str) or len(text) > 4000 or "\x00" in text:
+            raise ValueError("Invalid text step")
+        if "param" in step and not (isinstance(step["param"], str) and PARAM_RE.fullmatch(step["param"])):
+            raise ValueError("Invalid parameter name")
+    elif kind == "key":
+        if not isinstance(step.get("keys"), str) or len(step["keys"]) > 80 or not KEYS_RE.fullmatch(step["keys"]):
+            raise ValueError("Invalid key step")
+    elif kind == "scroll":
+        if not all(isinstance(step.get(a), int) and -100 <= step[a] <= 100 for a in ("dx", "dy")):
+            raise ValueError("Invalid scroll step")
+    elif kind == "wait":
+        seconds = step.get("seconds")
+        if not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or not 0 <= seconds <= 30:
+            raise ValueError("Invalid wait step")
+    elif kind == "open_url":
+        url = step.get("url")
+        if not isinstance(url, str) or len(url) > 2000 or not re.match(r"^https?://", url):
+            raise ValueError("Only http and https addresses can be opened")
+    elif kind == "launch":
+        if not isinstance(step.get("app"), str) or not APP_RE.fullmatch(step["app"]):
+            raise ValueError("Invalid application name")
+    elif kind == "focus":
+        if not isinstance(step.get("title"), str) or not 0 < len(step["title"]) <= 200:
+            raise ValueError("Invalid window title")
+    else:
+        raise ValueError("Unknown step type")
+
+
+def validate_agent_macro(data: dict) -> dict:
+    steps = data.get("steps")
+    if not isinstance(steps, list) or not 0 < len(steps) <= 500:
+        raise ValueError("An AI macro needs between 1 and 500 steps")
+    for step in steps:
+        validate_step(step)
+    declared = data.get("parameters", [])
+    if not isinstance(declared, list) or not all(
+            isinstance(p, dict) and isinstance(p.get("name"), str) and PARAM_RE.fullmatch(p["name"]) for p in declared):
+        raise ValueError("Invalid parameter definitions")
+    names = [p["name"] for p in declared]
+    if len(set(names)) != len(names) or any(
+            s.get("param") not in names for s in steps if s["type"] == "type" and "param" in s):
+        raise ValueError("Parameter is not declared")
+    screen = data.get("screen")
+    if screen is not None and not (isinstance(screen, list) and len(screen) == 2 and all(_coordinate(v) for v in screen)):
+        raise ValueError("Invalid screen size")
+    return data
+
+
 def validate_recording(data: dict) -> dict:
+    if isinstance(data, dict) and data.get("format") == FORMAT_AGENT:
+        return validate_agent_macro(data)
     if not isinstance(data, dict) or data.get("format") not in {FORMAT, LEGACY_FORMAT}:
         raise ValueError("Unsupported recording format")
     events = data.get("events")
@@ -203,8 +279,9 @@ def delete_recording(name: str) -> str:
 def _summary(path: Path, signature) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
     validate_recording(data)
-    counts = Counter(e["type"] for e in data["events"])
-    return {"name": path.name, "duration": round(float(data.get("duration", 0)), 1),
+    counts = Counter(e["type"] for e in data.get("events", []))
+    return {"name": path.name, "ai": data.get("format") == FORMAT_AGENT,
+            "steps": len(data.get("steps", [])), "description": str(data.get("description", ""))[:300], "duration": round(float(data.get("duration", 0)), 1),
             "recorded_at": data.get("recorded_at") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(signature[0] / 1e9)),
             "keys": counts["key_down"], "clicks": counts["button_down"],
             "moves": counts["motion"],
@@ -237,6 +314,8 @@ def _name(event: dict, mapping: dict[int, str] | None = None) -> str:
 
 
 def typing_blocks(data: dict, mapping: dict[int, str] | None = None) -> list[dict]:
+    if data.get("format") == FORMAT_AGENT:
+        return []
     events = data["events"]
     blocks: list[dict] = []
     current: list[int] = []
@@ -289,6 +368,8 @@ def definitions(data: dict, blocks: list[dict]) -> list[dict]:
     raw = data.get("parameters", [])
     if not isinstance(raw, list):
         raise ValueError("Invalid parameter definitions")
+    if data.get("format") == FORMAT_AGENT:
+        return [{"name": p["name"], "block": None} for p in raw]
     by_block = {b["block"]: b for b in blocks}
     names, used = set(), set()
     result = []
@@ -310,7 +391,7 @@ def inspect(name: str, mapping: dict[int, str] | None = None) -> dict:
     params = definitions(data, blocks)
     assigned = {p["block"]: p["name"] for p in params}
     return {"name": name, "target": (data.get("target_window") or {}).get("title", "Unknown window"),
-            "duration": data.get("duration", 0), "parameters": params,
+            "duration": data.get("duration", 0), "parameters": params, "ai": data.get("format") == FORMAT_AGENT,
             "blocks": [{k: v for k, v in block.items() if k != "indices"} |
                        {"parameter": assigned.get(block["block"])} for block in blocks]}
 
@@ -319,6 +400,8 @@ def add_parameter(name: str, block_number: int, param: str, mapping=None) -> dic
     if not isinstance(param, str) or not PARAM_RE.fullmatch(param):
         raise ValueError("Parameter name must start with a letter or underscore and use letters, numbers, or underscores")
     data = read_recording(name, fresh=True)
+    if data.get("format") == FORMAT_AGENT:
+        raise ValueError("AI macros have fixed parameters; ask the assistant to redesign it")
     blocks = typing_blocks(data, mapping)
     prior = definitions(data, blocks)
     if block_number not in {b["block"] for b in blocks}:
@@ -332,6 +415,8 @@ def add_parameter(name: str, block_number: int, param: str, mapping=None) -> dic
 
 def remove_parameter(name: str, param: str, mapping=None) -> dict:
     data = read_recording(name, fresh=True)
+    if data.get("format") == FORMAT_AGENT:
+        raise ValueError("AI macros have fixed parameters; ask the assistant to redesign it")
     prior = definitions(data, typing_blocks(data, mapping))
     if not any(p["name"] == param for p in prior):
         raise ValueError("Parameter does not exist")

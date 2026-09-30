@@ -1182,6 +1182,17 @@
     .acct-email { font-weight: 600; color: var(--text-main); overflow-wrap: anywhere; }
     .acct-link { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.8125rem; padding: 0; text-align: left; }
     .acct-link:hover { text-decoration: underline; }
+
+    /* Experimental AI assistant */
+    .ai-log { display: flex; flex-direction: column; gap: 0.5rem; max-height: 320px; overflow-y: auto; padding: 0.25rem; }
+    .ai-msg { padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.875rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .ai-msg small { display: block; color: var(--text-dim); font-size: 0.7rem; }
+    .ai-user { background: var(--primary-bg); align-self: flex-end; }
+    .ai-assistant { background: var(--surface-subtle); }
+    .ai-tool { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim); padding: 0 0.75rem; }
+    .ai-error { background: var(--danger-bg); color: var(--danger); }
+    .ai-system { color: var(--success); font-size: 0.8rem; padding: 0 0.75rem; }
+    .ai-tag { font-size: 0.65rem; font-weight: 700; letter-spacing: .05em; padding: 0.1rem 0.4rem; border-radius: var(--radius-full); background: var(--warning-bg); color: var(--warning); }
   </style>
 </head>
 <body>
@@ -1266,6 +1277,9 @@
           </svg>
           Stop Macro
         </button>
+        <button type="button" id="settings-btn" class="btn btn-secondary btn-sm" title="Settings and experimental features">
+          Settings
+        </button>
         <button type="button" id="account-btn" class="btn btn-secondary btn-sm" title="Account and remote control">
           Account
         </button>
@@ -1304,6 +1318,22 @@
           Stop
         </button>
       </div>
+    </section>
+
+    <!-- EXPERIMENTAL: AI ASSISTANT (shown only when enabled in Settings) -->
+    <section class="card" id="ai-card" style="display: none;" aria-labelledby="ai-heading">
+      <div class="card-header">
+        <h2 class="card-title" id="ai-heading">AI assistant <span class="ai-tag">EXPERIMENTAL</span></h2>
+        <button type="button" class="btn btn-secondary btn-sm" id="ai-clear">Clear</button>
+      </div>
+      <div class="ai-log" id="ai-log" aria-live="polite">
+        <div class="ai-msg ai-assistant">Type what you want done, for example: <em>open WhatsApp and send Hi to Farsan</em>. The first time, I work it out on screen and save it as a macro. Next time it runs instantly.</div>
+      </div>
+      <form id="ai-form" style="display: flex; gap: 0.5rem;">
+        <input type="text" id="ai-input" class="input-control" placeholder="What should I do?" maxlength="2000" autocomplete="off" aria-label="Request for the AI assistant" required>
+        <button type="submit" class="btn btn-primary" id="ai-send" style="width: auto;">Send</button>
+      </form>
+      <span class="form-help">Screenshots are sent to Google while I work. Use Stop in the header to interrupt.</span>
     </section>
 
     <!-- Main Dashboard Grid -->
@@ -1487,6 +1517,31 @@
         <button type="button" id="delete-modal-cancel-btn" class="btn btn-secondary">Cancel</button>
         <button type="button" id="delete-modal-confirm-btn" class="btn btn-record" style="width: auto;">Permanently Delete</button>
       </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS DIALOG -->
+  <div id="settings-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-dialog">
+      <div class="modal-header"><h3 id="settings-title">Settings</h3></div>
+      <div class="modal-body">
+        <div class="acct-row"><label class="checkbox-label" for="set-autostart">Start Input Reply when I log in</label>
+          <input type="checkbox" id="set-autostart"></div>
+        <div class="acct-row"><div><label class="checkbox-label" for="set-ai">AI macro assistant <span class="ai-tag">EXPERIMENTAL</span></label>
+          <div class="form-help">Gemini Live drives the desktop, designs macros, and speaks its answers. It can click and type anywhere. Screenshots go to Google.</div></div>
+          <input type="checkbox" id="set-ai"></div>
+        <div id="set-ai-options" style="display: none; gap: 0.75rem; flex-direction: column;">
+          <div class="form-group"><label for="set-key">Gemini API key <span class="form-help" id="set-key-state"></span></label>
+            <input type="password" id="set-key" class="input-control" autocomplete="off" placeholder="Paste a key to save it on this computer"></div>
+          <div class="form-group"><label for="set-model">Model</label>
+            <input type="text" id="set-model" class="input-control" autocomplete="off"></div>
+          <div class="acct-row"><label class="checkbox-label" for="set-voice">Speak answers on this computer</label>
+            <input type="checkbox" id="set-voice"></div>
+          <button type="button" class="btn btn-secondary btn-sm" id="set-save" style="align-self: flex-start;">Save AI settings</button>
+        </div>
+        <div id="set-msg" class="acct-msg" role="alert"></div>
+      </div>
+      <div class="modal-footer"><button type="button" id="set-close" class="btn btn-secondary">Close</button></div>
     </div>
   </div>
 
@@ -2929,6 +2984,139 @@
       autostart.addEventListener('change', function () {
         api('/api/settings', { autostart: autostart.checked }).catch(function (err) { say(msgIn, err.message, 'error'); });
       });
+    })();
+  </script>
+  <script>
+    (function () {
+      'use strict';
+      var $ = function (id) { return document.getElementById(id); };
+      var lastId = 0, timer = null, enabled = false, working = false;
+
+      function api(path, body) {
+        var options = { headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('inputReplyToken') || '') } };
+        if (body) {
+          options.method = 'POST';
+          options.headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(body);
+        }
+        return fetch(path, options).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+            return data;
+          });
+        });
+      }
+      function say(text, kind) { var m = $('set-msg'); m.textContent = text || ''; m.className = 'acct-msg' + (kind ? ' ' + kind : ''); }
+
+      // ---- chat panel ----
+      function addEntry(entry) {
+        var log = $('ai-log');
+        var el = document.createElement('div');
+        el.className = 'ai-msg ai-' + entry.role;
+        if (entry.role === 'tool' || entry.role === 'system') el.className = 'ai-' + entry.role;
+        el.textContent = entry.text;
+        if (entry.role === 'user' || entry.role === 'assistant') {
+          var meta = document.createElement('small');
+          meta.textContent = (entry.role === 'user' ? 'You' : 'Assistant') + ' · ' + entry.at;
+          el.appendChild(meta);
+        }
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function poll() {
+        return api('/api/ai?after=' + lastId).then(function (s) {
+          setEnabled(s.enabled);
+          s.entries.forEach(function (e) { lastId = Math.max(lastId, e.id); addEntry(e); });
+          working = Boolean(s.working);
+          $('ai-send').disabled = working;
+          $('ai-send').textContent = working ? 'Working…' : 'Send';
+          return s;
+        }).catch(function () {});
+      }
+
+      function schedule() {
+        clearTimeout(timer);
+        if (!enabled) return;
+        timer = setTimeout(function () { poll().then(schedule); }, working ? 800 : (document.hidden ? 8000 : 3000));
+      }
+
+      function setEnabled(on) {
+        var was = enabled;
+        enabled = Boolean(on);
+        $('ai-card').style.display = enabled ? 'flex' : 'none';
+        $('ai-card').style.flexDirection = 'column';
+        $('ai-card').style.gap = '0.75rem';
+        if (enabled && !was) schedule();
+      }
+
+      $('ai-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var text = $('ai-input').value.trim();
+        if (!text) return;
+        $('ai-send').disabled = true;
+        api('/api/ai/ask', { text: text }).then(function () {
+          $('ai-input').value = '';
+          working = true;
+          return poll();
+        }).then(schedule).catch(function (err) {
+          addEntry({ role: 'error', text: err.message, at: '' });
+          $('ai-send').disabled = false;
+        });
+      });
+      $('ai-clear').addEventListener('click', function () {
+        api('/api/ai/clear', {}).then(function () {
+          $('ai-log').querySelectorAll('.ai-msg:not(:first-child), .ai-tool, .ai-system').forEach(function (n) { n.remove(); });
+        });
+      });
+
+      // ---- settings dialog ----
+      var modal = $('settings-modal');
+      function options(on) { $('set-ai-options').style.display = on ? 'flex' : 'none'; }
+
+      function load() {
+        return Promise.all([api('/api/settings'), api('/api/ai')]).then(function (r) {
+          $('set-autostart').checked = Boolean(r[0].autostart);
+          $('set-ai').checked = Boolean(r[1].enabled);
+          $('set-voice').checked = Boolean(r[1].voice);
+          $('set-model').value = r[1].model || '';
+          $('set-key').value = '';
+          $('set-key-state').textContent = r[1].has_key ? '(a key is saved)' : '(no key saved)';
+          options(r[1].enabled);
+          setEnabled(r[1].enabled);
+        }).catch(function (err) { say(err.message, 'error'); });
+      }
+
+      $('settings-btn').addEventListener('click', function () { say(''); modal.style.display = 'flex'; load(); });
+      function close() { modal.style.display = 'none'; $('set-key').value = ''; }
+      $('set-close').addEventListener('click', close);
+      modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+      $('set-autostart').addEventListener('change', function () {
+        api('/api/settings', { autostart: $('set-autostart').checked }).catch(function (err) { say(err.message, 'error'); });
+      });
+      $('set-ai').addEventListener('change', function () {
+        var on = $('set-ai').checked;
+        options(on);
+        api('/api/ai/settings', { enabled: on }).then(function (s) {
+          setEnabled(s.enabled);
+          say(on ? (s.has_key ? 'AI assistant enabled.' : 'Enabled. Now add a Gemini API key below.') : 'AI assistant disabled.', 'ok');
+        }).catch(function (err) { say(err.message, 'error'); });
+      });
+      $('set-save').addEventListener('click', function () {
+        var body = { voice: $('set-voice').checked, model: $('set-model').value.trim() };
+        if ($('set-key').value) body.api_key = $('set-key').value.trim();
+        api('/api/ai/settings', body).then(function (s) {
+          $('set-key').value = '';
+          $('set-key-state').textContent = s.has_key ? '(a key is saved)' : '(no key saved)';
+          say('Saved.', 'ok');
+        }).catch(function (err) { say(err.message, 'error'); });
+      });
+
+      // Show the panel on load if it was enabled earlier.
+      var boot = setInterval(function () {
+        if (sessionStorage.getItem('inputReplyToken')) { clearInterval(boot); poll().then(schedule); }
+      }, 500);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) schedule(); });
     })();
   </script>
 </body>

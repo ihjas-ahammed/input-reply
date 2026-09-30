@@ -10,7 +10,8 @@ import threading
 import time
 from datetime import datetime
 
-from . import core
+from . import core, macros
+from .actuator import Actuator
 
 
 def seconds(value, maximum=300):
@@ -64,6 +65,11 @@ def record_once(backend, name, duration, countdown, window_id=None, cancel=None)
 
 def replay_once(backend, name, values, countdown, window_id=None, preserve=False, cancel=None):
     data = core.read_recording(name)
+    if data.get("format") == core.FORMAT_AGENT:
+        macros.resolve(data, values)
+        if not wait_countdown(countdown, cancel):
+            return None, False
+        return {"id": "0", "title": "AI macro"}, macros.play(data, values, Actuator(backend), cancel)
     check_backend(data, backend)
     mapping = mapping_for(data, backend)
     events = core.substitute(data, values, mapping)
@@ -176,6 +182,24 @@ class MacroState:
         finally:
             self.desktop.invalidate()
 
+    def claim(self, kind, name, message):
+        """Reserve the desktop for a long-running task that manages its own thread (the AI assistant)."""
+        with self.lock:
+            if self.job["busy"]:
+                raise RuntimeError("Another macro is already running")
+            self.cancel = threading.Event()
+            self.job = {"phase": "replaying", "busy": True, "kind": kind, "name": name,
+                        "message": message, "started_at": time.time()}
+            self.version += 1
+            return self.cancel
+
+    def update(self, message):
+        self._set(message=message)
+
+    def release(self, phase, message):
+        self._set(phase=phase, busy=False, message=message)
+        self.desktop.invalidate()
+
     def stop(self):
         with self.lock:
             if not self.job["busy"]:
@@ -238,10 +262,12 @@ def _replay(args, backend, state):
     _require_desktop(state)
     name = args.get("name")
     data = core.read_recording(name)
-    check_backend(data, backend)
-    mapping = mapping_for(data, backend)
     values = args.get("params", {})
-    core.substitute(data, values, mapping)
+    if data.get("format") == core.FORMAT_AGENT:
+        macros.resolve(data, values)
+    else:
+        check_backend(data, backend)
+        core.substitute(data, values, mapping_for(data, backend))
     countdown = seconds(args.get("countdown", 3), 30)
     state.begin("replay", name, countdown=countdown, window_id=_window_id(args.get("window_id"), False),
                 values=values, preserve=bool(args.get("preserve_key_holds")))

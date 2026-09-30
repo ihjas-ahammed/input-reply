@@ -11,7 +11,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from urllib.parse import parse_qs, urlsplit
 
-from . import autostart, core, settings
+import re
+
+from . import ai, autostart, core, settings
 from .actions import (STARTS_JOB, MacroState, check_backend, dispatch, mapping_for,  # noqa: F401 (re-exported)
                       record_once, replay_once, seconds, wait_countdown)
 from .backends import select_backend
@@ -95,6 +97,13 @@ class Handler(BaseHTTPRequestHandler):
         return value
 
     @property
+    def assistant(self):
+        assistant = getattr(self.server, "assistant", None)
+        if assistant is None:
+            raise RuntimeError("The AI assistant is not available in this server")
+        return assistant
+
+    @property
     def cloud(self):
         service = getattr(self.server, "cloud", None)
         if service is None:
@@ -122,6 +131,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, self.cloud.status())
             elif parsed.path == "/api/settings":
                 self.reply(200, self.app_settings())
+            elif parsed.path == "/api/ai":
+                after = parse_qs(parsed.query).get("after", ["0"])[0]
+                self.reply(200, self.assistant.status(int(after) if after.isdecimal() else 0))
             else:
                 self.reply(404, {"error": "Not found"})
         except (ValueError, RuntimeError, FileNotFoundError, OSError) as error:
@@ -144,6 +156,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.cloud_action(self.path.rsplit("/", 1)[1], body)
             elif self.path == "/api/settings":
                 self.change_settings(body)
+            elif self.path.startswith("/api/ai/"):
+                self.ai_action(self.path.rsplit("/", 1)[1], body)
             else:
                 self.reply(404, {"error": "Not found"})
         except CloudError as error:
@@ -169,6 +183,34 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.reply(404, {"error": "Not found"})
 
+    def ai_action(self, action, body):
+        assistant = self.assistant
+        if action == "ask":
+            self.reply(202, assistant.ask(body.get("text")))
+        elif action == "clear":
+            assistant.clear()
+            self.reply(200, assistant.status())
+        elif action == "settings":
+            changes = {}
+            if "enabled" in body:
+                changes["ai_enabled"] = bool(body["enabled"])
+            if "voice" in body:
+                changes["ai_voice"] = bool(body["voice"])
+            if "model" in body:
+                if not isinstance(body["model"], str) or not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", body["model"]):
+                    raise ValueError("Invalid model name")
+                changes["ai_model"] = body["model"]
+            if "api_key" in body:
+                if self.client_address[0] not in LOOPBACK:
+                    raise RuntimeError("Set the API key from the computer running Input Reply")
+                ai.set_api_key(body["api_key"] or None)
+                assistant.close()
+            if changes:
+                settings.update(**changes)
+            self.reply(200, assistant.status())
+        else:
+            self.reply(404, {"error": "Not found"})
+
     def change_settings(self, body):
         if "remote_enabled" in body:
             self.cloud.set_remote(bool(body["remote_enabled"]))
@@ -190,6 +232,7 @@ def make_server(host="127.0.0.1", port=8765, backend=None, cloud=None):
     server.backend = backend
     server.state = MacroState(backend)
     server.cloud = cloud
+    server.assistant = ai.Assistant(backend, server.state)
     server.access_token = access_token()
     return server
 

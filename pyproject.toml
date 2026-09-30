@@ -16,6 +16,8 @@ dependencies = ["pynput>=1.7.7,<2; platform_system == 'Windows'"]
 [project.optional-dependencies]
 # Native window and tray icon. Linux also needs a system WebKit/GTK or Qt (see README).
 desktop = ["pywebview>=5.0", "pystray>=0.19.5", "Pillow>=10.0"]
+# EXPERIMENTAL AI assistant (Gemini Live): WebSocket client and screenshot handling.
+ai = ["websockets>=13.0", "Pillow>=10.0"]
 build = ["pyinstaller>=6.6"]
 
 [project.urls]
