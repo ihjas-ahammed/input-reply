@@ -1,0 +1,42 @@
+name: Release builds
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: ubuntu-latest
+            name: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgirepository1.0-dev libcairo2-dev pkg-config gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+      - name: Install
+        run: python -m pip install ".[desktop,build]"
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Bundle
+        run: >
+          pyinstaller --noconfirm --clean --onedir --name InputReply
+          --collect-all webview --collect-submodules pystray
+          --add-data "src/input_reply/web.html${{ runner.os == 'Windows' && ';' || ':' }}input_reply"
+          packaging/launcher.py
+      - uses: actions/upload-artifact@v5
+        with:
+          name: InputReply-${{ matrix.name }}
+          path: dist/InputReply

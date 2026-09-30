@@ -3,6 +3,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -103,6 +104,38 @@ class ServerTests(unittest.TestCase):
         status, changed = self.request("/api/parameter/remove", {"name": "demo.json",
                                                                   "parameter": "friend"})
         self.assertEqual(changed["parameters"], [])
+
+    def test_health_is_public_and_connections_are_reused(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_port, timeout=5)
+        conn.request("GET", "/api/health")
+        response = conn.getresponse()
+        self.assertEqual(json.load(response), {"ok": True, "app": "input-reply"})
+        sock = conn.sock
+        conn.request("GET", "/api/status", headers={"Authorization": "Bearer test-code"})
+        status = conn.getresponse()
+        self.assertEqual(status.status, 200)
+        status.read()
+        self.assertIs(conn.sock, sock, "keep-alive should reuse the connection")
+        conn.request("GET", "/api/status")   # unauthorized closes the connection cleanly
+        rejected = conn.getresponse()
+        self.assertEqual(rejected.status, 401)
+        rejected.read()
+        conn.close()
+
+    def test_status_does_not_probe_the_desktop_every_time(self):
+        calls = []
+        original = self.backend.available
+        self.backend.available = lambda: calls.append(1) or original()
+        for _ in range(5):
+            self.request("/api/status")
+        self.assertEqual(len(calls), 1)
+
+    def test_cloud_endpoints_need_a_service(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request("/api/cloud")
+        self.assertEqual(caught.exception.code, 400)
+        caught.exception.close()
 
 
 if __name__ == "__main__":

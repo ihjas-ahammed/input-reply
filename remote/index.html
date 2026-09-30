@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Input Reply Remote</title>
+  <style>
+    :root {
+      --bg: #090d16; --surface: #111827; --surface-2: #172033; --input: #0b1120;
+      --border: #232f48; --text: #f8fafc; --muted: #94a3b8; --dim: #64748b;
+      --primary: #3b82f6; --primary-bg: rgba(59,130,246,.15); --ok: #10b981; --danger: #ef4444; --warn: #f59e0b;
+    }
+    @media (prefers-color-scheme: light) {
+      :root { --bg: #f4f6fb; --surface: #fff; --surface-2: #eef2f9; --input: #fff; --border: #d6deec;
+              --text: #0f172a; --muted: #475569; --dim: #64748b; --primary-bg: rgba(59,130,246,.12); }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    [hidden] { display: none !important; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 1rem; border-bottom: 1px solid var(--border); background: var(--surface); }
+    h1 { font-size: 1.05rem; }
+    main { max-width: 900px; margin: 0 auto; padding: 1rem; display: grid; gap: 1rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; display: grid; gap: .75rem; }
+    h2 { font-size: .95rem; }
+    label { display: grid; gap: .25rem; font-size: .8rem; color: var(--muted); }
+    input, select { width: 100%; padding: .55rem .7rem; background: var(--input); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+    input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    button { padding: .5rem .9rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; }
+    button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    button.danger { color: var(--danger); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+    .row > * { flex: 1 1 140px; }
+    .row > button { flex: 0 0 auto; }
+    .muted { color: var(--muted); font-size: .85rem; }
+    .pill { display: inline-block; padding: .1rem .55rem; border-radius: 99px; font-size: .72rem; font-weight: 600; background: var(--surface-2); color: var(--muted); }
+    .pill.on { background: rgba(16,185,129,.15); color: var(--ok); }
+    .pill.busy { background: rgba(245,158,11,.15); color: var(--warn); }
+    .list { display: grid; gap: .5rem; }
+    .item { display: flex; justify-content: space-between; gap: .75rem; align-items: center; padding: .6rem .75rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); text-align: left; width: 100%; }
+    .item[aria-current="true"] { border-color: var(--primary); background: var(--primary-bg); }
+    .msg { min-height: 1.2em; font-size: .85rem; }
+    .msg.error { color: var(--danger); }
+    .msg.ok { color: var(--ok); }
+    #toast { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); max-width: 92vw; padding: .6rem 1rem; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Input Reply Remote</h1>
+    <div class="row" style="flex: 0 1 auto; align-items: center;">
+      <span class="muted" id="who" hidden></span>
+      <button id="signout" hidden>Sign out</button>
+    </div>
+  </header>
+
+  <main id="setup-error" class="card" hidden>
+    <h2>Firebase is not configured</h2>
+    <p class="muted">Copy <code>firebase-config.example.js</code> to <code>firebase-config.js</code> in this folder and fill in your project's web app config, then redeploy.</p>
+  </main>
+
+  <main id="auth" hidden>
+    <form class="card" id="auth-form">
+      <h2 id="auth-title">Sign in</h2>
+      <p class="muted">Use the same account you signed in with on your computer.</p>
+      <label>Email <input type="email" id="email" autocomplete="username" required></label>
+      <label>Password <input type="password" id="password" autocomplete="current-password" minlength="6" required></label>
+      <div class="msg" id="auth-msg" role="alert"></div>
+      <div class="row">
+        <button class="primary" type="submit" id="auth-submit">Sign in</button>
+        <button type="button" id="auth-toggle">Create account</button>
+        <button type="button" id="auth-reset">Forgot password</button>
+      </div>
+    </form>
+  </main>
+
+  <main id="app" hidden>
+    <section class="card" aria-labelledby="devices-h">
+      <h2 id="devices-h">Your computers</h2>
+      <div class="list" id="devices"></div>
+      <p class="muted" id="no-devices" hidden>No computers yet. Install Input Reply on a computer and sign in with this account.</p>
+    </section>
+
+    <div id="device-view" hidden style="display: grid; gap: 1rem;">
+      <section class="card" aria-live="polite">
+        <div class="row" style="align-items: center;">
+          <div><strong id="dev-name"></strong> <span class="pill" id="dev-pill"></span>
+            <div class="muted" id="job-message"></div></div>
+          <button class="danger" id="stop" disabled>Stop</button>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="rec-h">
+        <div class="row" style="align-items: center;"><h2 id="rec-h" style="flex: 1;">Recordings</h2></div>
+        <div class="list" id="recordings"></div>
+        <p class="muted" id="no-recordings" hidden>No recordings on this computer.</p>
+      </section>
+
+      <section class="card" aria-labelledby="new-h">
+        <h2 id="new-h">Record a new macro</h2>
+        <div class="row">
+          <label>Name <input id="rec-name" value="macro" maxlength="60"></label>
+          <label>Target window <select id="rec-window"><option value="">Load windows…</option></select></label>
+          <button id="load-windows">Refresh windows</button>
+        </div>
+        <div class="row">
+          <label>Seconds <input id="rec-seconds" type="number" min="1" max="300" value="30"></label>
+          <label>Countdown <input id="rec-countdown" type="number" min="0" max="30" value="3"></label>
+          <button class="primary" id="record">Start recording</button>
+        </div>
+        <p class="muted">Stop with F12 on the computer or the Stop button above.</p>
+      </section>
+    </div>
+  </main>
+  <div id="toast" role="status" hidden></div>
+
+  <script type="module">
+    const SDK = "https://www.gstatic.com/firebasejs/10.14.1/";
+    const $ = (id) => document.getElementById(id);
+    const show = (el, on) => { el.hidden = !on; };
+    const TERMINAL = ["done", "error", "expired"];
+    const STALE_MS = 90000;
+
+    let toastTimer;
+    function toast(text) {
+      const el = $("toast");
+      el.textContent = text; show(el, true);
+      clearTimeout(toastTimer); toastTimer = setTimeout(() => show(el, false), 4500);
+    }
+    function say(text, kind) { const m = $("auth-msg"); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
+    function node(tag, props = {}, ...children) {
+      const el = Object.assign(document.createElement(tag), props);
+      el.append(...children);
+      return el;
+    }
+
+    let config;
+    try { ({ firebaseConfig: config } = await import("./firebase-config.js")); } catch (e) { config = null; }
+    if (!config || !config.apiKey || String(config.apiKey).startsWith("YOUR_")) { show($("setup-error"), true); throw new Error("not configured"); }
+
+    const [{ initializeApp }, A, D] = await Promise.all([
+      import(SDK + "firebase-app.js"), import(SDK + "firebase-auth.js"), import(SDK + "firebase-database.js")]);
+    const app = initializeApp(config);
+    const auth = A.getAuth(app);
+    const db = D.getDatabase(app);
+
+    let uid = null, device = null, devices = {}, offset = 0, detach = [], creating = false;
+
+    D.onValue(D.ref(db, ".info/serverTimeOffset"), (s) => { offset = s.val() || 0; });
+
+    // ---- sign in ----------------------------------------------------------------
+    const FRIENDLY = {
+      "auth/invalid-credential": "Email or password is incorrect.", "auth/wrong-password": "Email or password is incorrect.",
+      "auth/user-not-found": "Email or password is incorrect.", "auth/email-already-in-use": "An account with this email already exists.",
+      "auth/weak-password": "Password must be at least 6 characters.", "auth/invalid-email": "Enter a valid email address.",
+      "auth/too-many-requests": "Too many attempts. Wait a few minutes.", "auth/operation-not-allowed": "Email/password sign-in is not enabled for this project."};
+    const explain = (e) => FRIENDLY[e.code] || e.message || "Something went wrong.";
+
+    function setCreating(on) {
+      creating = on;
+      $("auth-title").textContent = $("auth-submit").textContent = on ? "Create account" : "Sign in";
+      $("auth-toggle").textContent = on ? "I have an account" : "Create account";
+      $("password").autocomplete = on ? "new-password" : "current-password";
+      say("");
+    }
+    $("auth-toggle").onclick = () => setCreating(!creating);
+    $("auth-form").onsubmit = async (e) => {
+      e.preventDefault(); $("auth-submit").disabled = true; say("Working…");
+      try {
+        const fn = creating ? A.createUserWithEmailAndPassword : A.signInWithEmailAndPassword;
+        await fn(auth, $("email").value.trim(), $("password").value);
+        $("password").value = ""; say("");
+      } catch (err) { say(explain(err), "error"); } finally { $("auth-submit").disabled = false; }
+    };
+    $("auth-reset").onclick = async () => {
+      if (!$("email").value) return say("Enter your email first.", "error");
+      try { await A.sendPasswordResetEmail(auth, $("email").value.trim()); say("Password reset email sent.", "ok"); }
+      catch (err) { say(explain(err), "error"); }
+    };
+    $("signout").onclick = () => A.signOut(auth);
+
+    A.onAuthStateChanged(auth, (user) => {
+      detach.splice(0).forEach((off) => off());
+      device = null; devices = {};
+      uid = user ? user.uid : null;
+      show($("auth"), !user); show($("app"), !!user); show($("signout"), !!user); show($("who"), !!user);
+      $("who").textContent = user ? user.email : "";
+      show($("device-view"), false);
+      if (!user) return;
+      detach.push(D.onValue(D.ref(db, `inputReply/users/${uid}/devices`), (s) => {
+        devices = s.val() || {};
+        renderDevices(); renderDevice();
+      }, (err) => toast("Cannot read your devices: " + err.message)));
+    });
+    setInterval(() => { if (uid) { renderDevices(); renderDevice(); } }, 15000);
+
+    // ---- devices ----------------------------------------------------------------
+    const isOnline = (d) => d.online && (Date.now() + offset - (d.lastSeen || 0)) < STALE_MS;
+
+    function renderDevices() {
+      const box = $("devices");
+      box.replaceChildren();
+      const keys = Object.keys(devices);
+      show($("no-devices"), keys.length === 0);
+      if (device && !devices[device]) device = null;
+      for (const key of keys) {
+        const d = devices[key];
+        const b = node("button", { className: "item", type: "button" },
+          node("span", {}, node("strong", { textContent: d.name || key }), node("div", { className: "muted", textContent: `${d.platform || ""} ${d.backend ? "· " + d.backend : ""}` })),
+          node("span", { className: "pill" + (isOnline(d) ? " on" : ""), textContent: isOnline(d) ? "ONLINE" : "OFFLINE" }));
+        b.setAttribute("aria-current", String(key === device));
+        b.onclick = () => { device = key; renderDevices(); renderDevice(); loadWindows(true); };
+        box.append(b);
+      }
+      if (!device && keys.length === 1) { device = keys[0]; renderDevices(); renderDevice(); }
+    }
+
+    function renderDevice() {
+      const d = devices[device];
+      show($("device-view"), !!d);
+      if (!d) return;
+      const online = isOnline(d), job = d.job || {};
+      $("dev-name").textContent = d.name || device;
+      const pill = $("dev-pill");
+      pill.textContent = !online ? "OFFLINE" : job.busy ? String(job.phase || "busy").toUpperCase() : "READY";
+      pill.className = "pill" + (job.busy ? " busy" : online ? " on" : "");
+      $("job-message").textContent = !online ? "This computer is offline." : d.remoteEnabled === false ? "Remote control is turned off on this computer." : (job.message || "");
+      $("stop").disabled = !(online && job.busy);
+      renderRecordings(d, online && d.remoteEnabled !== false);
+    }
+
+    // ---- commands ---------------------------------------------------------------
+    function send(action, args) {
+      const path = `inputReply/users/${uid}/commands/${device}`;
+      const ref = D.push(D.ref(db, path), { action, args: args || {}, createdAt: D.serverTimestamp(), status: "pending", source: "web" });
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { off(); reject(new Error("No answer. Is Input Reply running on that computer?")); }, 40000);
+        let off = () => {};
+        off = D.onValue(ref, (s) => {
+          const v = s.val();
+          if (!v || !TERMINAL.includes(v.status)) return;
+          clearTimeout(timer); off();
+          v.status === "done" ? resolve(v.result) : reject(new Error(v.error || "Command failed"));
+        });
+      });
+    }
+    async function run(button, action, args, okText) {
+      button.disabled = true;
+      try { const r = await send(action, args); if (okText) toast(okText); return r; }
+      catch (err) { toast(err.message); }
+      finally { button.disabled = false; }
+    }
+
+    $("stop").onclick = (e) => run(e.currentTarget, "stop", {}, "Stop sent");
+
+    let windowsLoadedFor = null;
+    async function loadWindows(auto) {
+      if (auto && windowsLoadedFor === device) return;
+      const r = await run($("load-windows"), "windows", {});
+      if (!r) return;
+      windowsLoadedFor = device;
+      const select = $("rec-window");
+      select.replaceChildren(node("option", { value: "", textContent: "Choose a window" }),
+        ...(r.windows || []).map((w) => node("option", { value: w.id, textContent: w.title })));
+    }
+    $("load-windows").onclick = () => loadWindows(false);
+    $("record").onclick = async (e) => {
+      if (!$("rec-window").value) return toast("Choose a target window first.");
+      await run(e.currentTarget, "record", {
+        name: $("rec-name").value, window_id: $("rec-window").value,
+        seconds: Number($("rec-seconds").value), countdown: Number($("rec-countdown").value)}, "Recording started");
+    };
+
+    // ---- recordings -------------------------------------------------------------
+    const open = new Set();
+    let renderedKey = "";
+    function renderRecordings(d, enabled) {
+      const box = $("recordings");
+      const rows = Object.values(d.recordings || {});
+      // Status updates arrive often; rebuilding the list would drop focus while typing a value.
+      const key = JSON.stringify([device, enabled, rows]);
+      if (key === renderedKey) return;
+      renderedKey = key;
+      show($("no-recordings"), rows.length === 0);
+      const draft = {};
+      box.querySelectorAll("input[data-param]").forEach((i) => { draft[i.dataset.name + "/" + i.dataset.param] = i.value; });
+      box.replaceChildren(...rows.map((rec) => recordingItem(rec, enabled, draft)));
+    }
+
+    function recordingItem(rec, enabled, draft) {
+      const params = Object.values(rec.parameters || {});
+      const blocks = Object.values(rec.blocks || {});
+      const inputs = params.map((p) => {
+        const input = node("input", { type: "text", maxLength: 4000, placeholder: "Keep original keystrokes" });
+        input.dataset.param = p.name; input.dataset.name = rec.name;
+        input.value = draft[rec.name + "/" + p.name] || "";
+        return node("label", {}, `{${p.name}}`, input);
+      });
+      const unnamed = blocks.filter((b) => !b.parameter);
+      const nameBlock = node("div", { className: "row" });
+      if (unnamed.length) {
+        const blockSelect = node("select", {}, ...unnamed.map((b) => node("option", { value: b.block, textContent: `Typing block ${b.block} (${b.keys} keys)` })));
+        const paramName = node("input", { placeholder: "Parameter name", maxLength: 40 });
+        const add = node("button", { textContent: "Name block", type: "button", disabled: !enabled });
+        add.onclick = () => run(add, "parameter_add", { name: rec.name, block: Number(blockSelect.value), parameter: paramName.value.trim() }, "Parameter added");
+        nameBlock.append(blockSelect, paramName, add);
+      }
+      const countdown = node("input", { type: "number", min: 0, max: 30, value: 3 });
+      const replay = node("button", { className: "primary", textContent: "Replay", type: "button", disabled: !enabled });
+      replay.onclick = () => {
+        const values = {};
+        details.querySelectorAll("input[data-param]").forEach((i) => { if (i.value !== "") values[i.dataset.param] = i.value; });
+        run(replay, "replay", { name: rec.name, params: values, countdown: Number(countdown.value) }, "Replay started");
+      };
+      const del = node("button", { className: "danger", textContent: "Delete", type: "button", disabled: !enabled });
+      del.onclick = () => { if (confirm(`Delete ${rec.name}? This cannot be undone.`)) run(del, "delete", { name: rec.name }, "Deleted"); };
+      const details = node("div", { className: "card", hidden: !open.has(rec.name) }, ...inputs, nameBlock,
+        node("div", { className: "row" }, node("label", {}, "Countdown (s)", countdown), replay, del));
+      const head = node("button", { className: "item", type: "button" },
+        node("span", {}, node("strong", { textContent: rec.name }),
+          node("div", { className: "muted", textContent: `${rec.duration}s · ${rec.keys} keys · ${rec.clicks} clicks · ${rec.target}` })),
+        node("span", { className: "pill", textContent: `${params.length} params` }));
+      head.setAttribute("aria-expanded", String(open.has(rec.name)));
+      head.onclick = () => { open.has(rec.name) ? open.delete(rec.name) : open.add(rec.name); details.hidden = !open.has(rec.name); head.setAttribute("aria-expanded", String(open.has(rec.name))); };
+      return node("div", { className: "list" }, head, details);
+    }
+  </script>
+</body>
+</html>

@@ -11,3 +11,7 @@ recordings/
 *.trace.json
 .env
 *.log
+
+remote/firebase-config.js
+cloud.json
+session.json

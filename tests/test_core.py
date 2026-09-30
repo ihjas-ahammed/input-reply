@@ -77,5 +77,32 @@ class CoreTests(unittest.TestCase):
                          ["key_down", "key_up"])
 
 
+    def test_recordings_are_cached_until_the_file_changes(self):
+        events = [{"type": "key_down", "key": "h", "t": 0.1}, {"type": "key_up", "key": "h", "t": 0.13}]
+        core.write_recording("a.json", {"format": core.FORMAT, "events": events, "duration": 1})
+        first = core.read_recording("a.json")
+        self.assertIs(core.read_recording("a.json"), first)
+        self.assertIsNot(core.read_recording("a.json", fresh=True), first)
+        self.assertEqual(core.catalog()[0]["keys"], 1)
+        core.add_parameter("a.json", 1, "friend")
+        self.assertNotIn("parameters", first, "editing must not change a shared cached copy")
+        self.assertEqual(core.read_recording("a.json")["parameters"], [{"name": "friend", "block": 1}])
+        core.write_recording("a.json", {"format": core.FORMAT, "events": events * 2 and events + [
+            {"type": "key_down", "key": "i", "t": 0.2}, {"type": "key_up", "key": "i", "t": 0.22}], "duration": 2})
+        self.assertEqual(core.catalog()[0]["keys"], 2)
+        core.delete_recording("a.json")
+        self.assertEqual(core.catalog(), [])
+
+    def test_account_folders_are_separate_and_validated(self):
+        self.addCleanup(core.set_account, None)
+        core.write_recording("a.json", {"format": core.FORMAT, "events": [], "duration": 1})
+        core.set_account("user1")
+        self.assertEqual(core.catalog(), [])
+        self.assertEqual(core.adopt_legacy_recordings("user1"), 1)
+        self.assertEqual(core.adopt_legacy_recordings("user2"), 0, "only the first account adopts old files")
+        with self.assertRaises(ValueError):
+            core.set_account("../escape")
+
+
 if __name__ == "__main__":
     unittest.main()

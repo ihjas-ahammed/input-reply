@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "input-reply"
-version = "0.1.0"
+version = "0.2.0"
 description = "Record and replay desktop macros with editable text parameters"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,12 +13,20 @@ authors = [{name = "Ihjas Ahammed"}]
 keywords = ["macro", "automation", "desktop", "wayland", "x11", "windows"]
 dependencies = ["pynput>=1.7.7,<2; platform_system == 'Windows'"]
 
+[project.optional-dependencies]
+# Native window and tray icon. Linux also needs a system WebKit/GTK or Qt (see README).
+desktop = ["pywebview>=5.0", "pystray>=0.19.5", "Pillow>=10.0"]
+build = ["pyinstaller>=6.6"]
+
 [project.urls]
 Homepage = "https://github.com/ihjas-ahammed/input-reply"
 Repository = "https://github.com/ihjas-ahammed/input-reply"
 
 [project.scripts]
 input-reply = "input_reply.cli:entrypoint"
+
+[project.gui-scripts]
+input-reply-app = "input_reply.cli:app_entrypoint"
 
 [tool.setuptools.packages.find]
 where = ["src"]

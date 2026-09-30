@@ -1,0 +1,28 @@
+{
+  "rules": {
+    "inputReply": {
+      "users": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid",
+          "commands": {
+            "$device": {
+              "$command": {
+                ".validate": "!newData.exists() || newData.hasChildren(['action', 'createdAt', 'status'])",
+                "action": {
+                  ".validate": "newData.isString() && newData.val().length <= 40"
+                },
+                "createdAt": {
+                  ".validate": "data.exists() ? newData.val() === data.val() : newData.val() === now"
+                },
+                "status": {
+                  ".validate": "newData.isString() && (newData.val() === 'pending' || newData.val() === 'running' || newData.val() === 'done' || newData.val() === 'error' || newData.val() === 'expired')"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

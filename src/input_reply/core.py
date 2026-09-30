@@ -6,9 +6,11 @@ import json
 import math
 import os
 import re
+import shutil
 import tempfile
+import threading
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from pathlib import Path
 from threading import Event
 
@@ -39,10 +41,47 @@ def data_dir() -> Path:
     return base / "input-reply"
 
 
+UID_RE = re.compile(r"^[A-Za-z0-9]{1,128}$")
+_account: str | None = None
+
+
+def set_account(uid: str | None) -> None:
+    """Scope recordings to the signed-in account; None uses the offline folder."""
+    global _account
+    if uid is not None and not UID_RE.fullmatch(uid):
+        raise ValueError("Invalid account id")
+    _account = uid
+
+
+def current_account() -> str | None:
+    return _account
+
+
 def recordings_dir() -> Path:
-    path = data_dir() / "recordings"
+    if _account:
+        path = data_dir() / "accounts" / _account / "recordings"
+    else:
+        path = data_dir() / "recordings"
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     return path
+
+
+def adopt_legacy_recordings(uid: str) -> int:
+    """Copy pre-login recordings into the first account that signs in on this computer."""
+    marker = data_dir() / "accounts" / ".legacy-claimed"
+    legacy = data_dir() / "recordings"
+    if marker.exists() or not legacy.is_dir() or not UID_RE.fullmatch(uid):
+        return 0
+    target = data_dir() / "accounts" / uid / "recordings"
+    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+    copied = 0
+    for source in legacy.glob("*.json"):
+        destination = target / source.name
+        if NAME_RE.fullmatch(source.name) and not destination.exists():
+            shutil.copy2(source, destination)
+            copied += 1
+    marker.write_text(uid, encoding="utf-8")
+    return copied
 
 
 def safe_path(name: str) -> Path:
@@ -103,8 +142,38 @@ def validate_recording(data: dict) -> dict:
     return data
 
 
-def read_recording(name: str) -> dict:
-    return validate_recording(json.loads(safe_path(name).read_text(encoding="utf-8")))
+_cache_lock = threading.Lock()
+_parsed: OrderedDict = OrderedDict()   # path -> (signature, recording); small LRU of parsed files
+_summaries: dict = {}                  # path -> (signature, catalog row)
+PARSED_LIMIT = 8
+
+
+def _signature(path: Path):
+    info = path.stat()
+    return info.st_mtime_ns, info.st_size
+
+
+def read_recording(name: str, fresh: bool = False) -> dict:
+    """Parse and validate a recording.
+
+    Parsed files are cached by modification time. The returned dict is shared, so
+    callers that change it must pass ``fresh=True`` to get a private copy.
+    """
+    path = safe_path(name)
+    signature = _signature(path)
+    if not fresh:
+        with _cache_lock:
+            hit = _parsed.get(path)
+            if hit and hit[0] == signature:
+                _parsed.move_to_end(path)
+                return hit[1]
+    data = validate_recording(json.loads(path.read_text(encoding="utf-8")))
+    if not fresh:
+        with _cache_lock:
+            _parsed[path] = (signature, data)
+            while len(_parsed) > PARSED_LIMIT:
+                _parsed.popitem(last=False)
+    return data
 
 
 def write_recording(name: str, data: dict) -> None:
@@ -117,22 +186,48 @@ def write_recording(name: str, data: dict) -> None:
             os.fchmod(out.fileno(), 0o600)
         json.dump(data, out, separators=(",", ":"))
     os.replace(temporary, destination)
+    with _cache_lock:
+        _parsed.pop(destination, None)
+        _summaries.pop(destination, None)
+
+
+def delete_recording(name: str) -> str:
+    path = safe_path(name)
+    path.unlink()
+    with _cache_lock:
+        _parsed.pop(path, None)
+        _summaries.pop(path, None)
+    return path.name
+
+
+def _summary(path: Path, signature) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    validate_recording(data)
+    counts = Counter(e["type"] for e in data["events"])
+    return {"name": path.name, "duration": round(float(data.get("duration", 0)), 1),
+            "recorded_at": data.get("recorded_at") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(signature[0] / 1e9)),
+            "keys": counts["key_down"], "clicks": counts["button_down"],
+            "moves": counts["motion"],
+            "target": (data.get("target_window") or {}).get("title", "Unknown window")}
 
 
 def catalog() -> list[dict]:
-    result = []
-    for path in sorted(recordings_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+    """Recording summaries, newest first. Unchanged files are not re-parsed."""
+    rows = []
+    for path in recordings_dir().glob("*.json"):
         try:
-            data = read_recording(path.name)
-            counts = Counter(e["type"] for e in data["events"])
-            result.append({"name": path.name, "duration": round(float(data.get("duration", 0)), 1),
-                           "recorded_at": data.get("recorded_at") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(path.stat().st_mtime)),
-                           "keys": counts["key_down"], "clicks": counts["button_down"],
-                           "moves": counts["motion"],
-                           "target": (data.get("target_window") or {}).get("title", "Unknown window")})
+            signature = _signature(path)
+            with _cache_lock:
+                hit = _summaries.get(path)
+            if not hit or hit[0] != signature:
+                hit = (signature, _summary(path, signature))
+                with _cache_lock:
+                    _summaries[path] = hit
+            rows.append((signature[0], hit[1]))
         except (ValueError, OSError, KeyError, json.JSONDecodeError):
             continue
-    return result
+    rows.sort(key=lambda row: row[0], reverse=True)
+    return [row[1] for row in rows]
 
 
 def _name(event: dict, mapping: dict[int, str] | None = None) -> str:
@@ -223,7 +318,7 @@ def inspect(name: str, mapping: dict[int, str] | None = None) -> dict:
 def add_parameter(name: str, block_number: int, param: str, mapping=None) -> dict:
     if not isinstance(param, str) or not PARAM_RE.fullmatch(param):
         raise ValueError("Parameter name must start with a letter or underscore and use letters, numbers, or underscores")
-    data = read_recording(name)
+    data = read_recording(name, fresh=True)
     blocks = typing_blocks(data, mapping)
     prior = definitions(data, blocks)
     if block_number not in {b["block"] for b in blocks}:
@@ -236,7 +331,7 @@ def add_parameter(name: str, block_number: int, param: str, mapping=None) -> dic
 
 
 def remove_parameter(name: str, param: str, mapping=None) -> dict:
-    data = read_recording(name)
+    data = read_recording(name, fresh=True)
     prior = definitions(data, typing_blocks(data, mapping))
     if not any(p["name"] == param for p in prior):
         raise ValueError("Parameter does not exist")

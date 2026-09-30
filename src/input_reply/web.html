@@ -1169,6 +1169,19 @@
         width: 100%;
       }
     }
+
+    /* Account dialog */
+    .acct-tabs { display: flex; gap: 0.5rem; }
+    .acct-tabs .btn { flex: 1; }
+    .acct-tabs .btn[aria-pressed="true"] { background: var(--primary-bg); border-color: var(--primary); color: var(--text-main); }
+    .acct-msg { font-size: 0.8125rem; min-height: 1.2em; }
+    .acct-msg.error { color: var(--danger); }
+    .acct-msg.ok { color: var(--success); }
+    .acct-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .acct-row + .acct-row { border-top: 1px solid var(--border); padding-top: 0.75rem; }
+    .acct-email { font-weight: 600; color: var(--text-main); overflow-wrap: anywhere; }
+    .acct-link { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.8125rem; padding: 0; text-align: left; }
+    .acct-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -1252,6 +1265,9 @@
             <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
           </svg>
           Stop Macro
+        </button>
+        <button type="button" id="account-btn" class="btn btn-secondary btn-sm" title="Account and remote control">
+          Account
         </button>
         <button type="button" id="disconnect-btn" class="btn btn-secondary btn-sm" title="Log out and change token">
           Disconnect
@@ -1474,12 +1490,53 @@
     </div>
   </div>
 
+  <!-- ACCOUNT / REMOTE CONTROL DIALOG -->
+  <div id="account-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="account-title">
+    <div class="modal-dialog">
+      <div class="modal-header"><h3 id="account-title">Account</h3></div>
+      <div class="modal-body" id="acct-out">
+        <p>Sign in to control this computer from your other devices. Recordings stay on this computer; only their names and named typing blocks are shared with your account.</p>
+        <div class="acct-tabs" role="group" aria-label="Sign in or create account">
+          <button type="button" class="btn btn-secondary btn-sm" id="acct-tab-in" aria-pressed="true">Sign in</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="acct-tab-up" aria-pressed="false">Create account</button>
+        </div>
+        <form id="acct-form" class="form-group" style="gap: 0.75rem;">
+          <div class="form-group"><label for="acct-email">Email</label>
+            <input type="email" id="acct-email" class="input-control" autocomplete="username" required></div>
+          <div class="form-group"><label for="acct-password">Password</label>
+            <input type="password" id="acct-password" class="input-control" autocomplete="current-password" minlength="6" required></div>
+          <button type="button" class="acct-link" id="acct-reset">Forgot password? Email me a reset link</button>
+          <div id="acct-msg-out" class="acct-msg" role="alert"></div>
+          <button type="submit" id="acct-submit" class="btn btn-primary">Sign in</button>
+        </form>
+      </div>
+      <div class="modal-body" id="acct-in" style="display: none;">
+        <div class="acct-row"><div><div class="form-help">Signed in as</div><div class="acct-email" id="acct-user"></div></div>
+          <button type="button" class="btn btn-secondary btn-sm" id="acct-logout">Sign out</button></div>
+        <div class="acct-row"><div><div>This computer</div><div class="form-help" id="acct-device"></div></div>
+          <span class="status-phase-badge phase-idle" id="acct-conn">…</span></div>
+        <div class="acct-row"><label class="checkbox-label" for="acct-remote">Allow remote control from my other devices</label>
+          <input type="checkbox" id="acct-remote"></div>
+        <div class="acct-row"><label class="checkbox-label" for="acct-autostart">Start Input Reply when I log in</label>
+          <input type="checkbox" id="acct-autostart"></div>
+        <div id="acct-msg-in" class="acct-msg" role="alert"></div>
+      </div>
+      <div class="modal-footer"><button type="button" id="acct-close" class="btn btn-secondary">Close</button></div>
+    </div>
+  </div>
+
   <script>
     (function () {
       'use strict';
 
       // Storage keys & application state
       const TOKEN_KEY = 'inputReplyToken';
+
+      // The desktop window passes the access code in the URL fragment (never sent to the server).
+      if (location.hash.indexOf('#token=') === 0) {
+        try { sessionStorage.setItem(TOKEN_KEY, decodeURIComponent(location.hash.slice(7))); } catch (e) { /* ignore */ }
+        history.replaceState(null, '', location.pathname);
+      }
 
       let currentStatus = { phase: 'idle', busy: false, message: 'Ready' };
       let previousBusy = false;
@@ -1795,18 +1852,35 @@
         }
       }
 
+      // Poll fast while a job runs, slowly when idle, and rarely when the tab is hidden.
+      let polling = false;
+
+      function nextPollDelay() {
+        if (document.hidden) return 8000;
+        return previousBusy ? 1000 : 3000;
+      }
+
       function startPolling() {
         stopPolling();
-        pollStatus();
-        pollTimer = setInterval(pollStatus, 1000);
+        polling = true;
+        (function tick() {
+          pollStatus().then(function () {
+            if (polling) pollTimer = setTimeout(tick, nextPollDelay());
+          });
+        })();
       }
 
       function stopPolling() {
+        polling = false;
         if (pollTimer) {
-          clearInterval(pollTimer);
+          clearTimeout(pollTimer);
           pollTimer = null;
         }
       }
+
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden && polling) startPolling();
+      });
 
       // Load Windows list
       async function loadWindows() {
@@ -2740,6 +2814,121 @@
       }
 
       init();
+    })();
+  </script>
+  <script>
+    (function () {
+      'use strict';
+      var modal = document.getElementById('account-modal');
+      var signedOut = document.getElementById('acct-out');
+      var signedIn = document.getElementById('acct-in');
+      var tabIn = document.getElementById('acct-tab-in');
+      var tabUp = document.getElementById('acct-tab-up');
+      var form = document.getElementById('acct-form');
+      var email = document.getElementById('acct-email');
+      var password = document.getElementById('acct-password');
+      var submit = document.getElementById('acct-submit');
+      var msgOut = document.getElementById('acct-msg-out');
+      var msgIn = document.getElementById('acct-msg-in');
+      var remote = document.getElementById('acct-remote');
+      var autostart = document.getElementById('acct-autostart');
+      var conn = document.getElementById('acct-conn');
+      var creating = false, timer = null;
+
+      function api(path, body) {
+        var options = { headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('inputReplyToken') || '') } };
+        if (body) {
+          options.method = 'POST';
+          options.headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(body);
+        }
+        return fetch(path, options).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+            return data;
+          });
+        });
+      }
+
+      function say(el, text, kind) { el.textContent = text || ''; el.className = 'acct-msg' + (kind ? ' ' + kind : ''); }
+
+      function setMode(up) {
+        creating = up;
+        tabIn.setAttribute('aria-pressed', String(!up));
+        tabUp.setAttribute('aria-pressed', String(up));
+        submit.textContent = up ? 'Create account' : 'Sign in';
+        password.autocomplete = up ? 'new-password' : 'current-password';
+        say(msgOut, '');
+      }
+
+      function render(cloud, prefs) {
+        var on = Boolean(cloud.signed_in);
+        signedOut.style.display = on ? 'none' : 'flex';
+        signedIn.style.display = on ? 'flex' : 'none';
+        if (!on) {
+          if (!cloud.configured) say(msgOut, cloud.config_error || 'Cloud sign-in is not configured.', 'error');
+          return;
+        }
+        document.getElementById('acct-user').textContent = cloud.email || '';
+        document.getElementById('acct-device').textContent = cloud.device_name || '';
+        conn.textContent = cloud.connected ? 'CONNECTED' : 'CONNECTING';
+        conn.className = 'status-phase-badge ' + (cloud.connected ? 'phase-done' : 'phase-idle');
+        remote.checked = Boolean(cloud.remote_enabled);
+        if (prefs) autostart.checked = Boolean(prefs.autostart);
+        say(msgIn, cloud.error || '', cloud.error ? 'error' : '');
+      }
+
+      function refresh() {
+        return Promise.all([api('/api/cloud'), api('/api/settings')]).then(function (r) {
+          render(r[0], r[1]);
+        }).catch(function (err) { say(signedIn.style.display === 'none' ? msgOut : msgIn, err.message, 'error'); });
+      }
+
+      function open() {
+        modal.style.display = 'flex';
+        refresh();
+        timer = setInterval(refresh, 4000);
+      }
+
+      function close() {
+        modal.style.display = 'none';
+        clearInterval(timer);
+        password.value = '';
+      }
+
+      document.getElementById('account-btn').addEventListener('click', open);
+      document.getElementById('acct-close').addEventListener('click', close);
+      modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && modal.style.display !== 'none') close(); });
+      tabIn.addEventListener('click', function () { setMode(false); });
+      tabUp.addEventListener('click', function () { setMode(true); });
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        submit.disabled = true;
+        say(msgOut, creating ? 'Creating account…' : 'Signing in…');
+        api(creating ? '/api/cloud/signup' : '/api/cloud/login', { email: email.value, password: password.value })
+          .then(function () { password.value = ''; return refresh(); })
+          .catch(function (err) { say(msgOut, err.message, 'error'); })
+          .then(function () { submit.disabled = false; });
+      });
+
+      document.getElementById('acct-reset').addEventListener('click', function () {
+        if (!email.value) { say(msgOut, 'Enter your email first.', 'error'); return; }
+        api('/api/cloud/reset', { email: email.value })
+          .then(function () { say(msgOut, 'Password reset email sent.', 'ok'); })
+          .catch(function (err) { say(msgOut, err.message, 'error'); });
+      });
+
+      document.getElementById('acct-logout').addEventListener('click', function () {
+        api('/api/cloud/logout', {}).then(refresh).catch(function (err) { say(msgIn, err.message, 'error'); });
+      });
+      remote.addEventListener('change', function () {
+        api('/api/settings', { remote_enabled: remote.checked }).catch(function (err) { say(msgIn, err.message, 'error'); });
+      });
+      autostart.addEventListener('change', function () {
+        api('/api/settings', { autostart: autostart.checked }).catch(function (err) { say(msgIn, err.message, 'error'); });
+      });
     })();
   </script>
 </body>
