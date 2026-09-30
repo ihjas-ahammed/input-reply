@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Paint</title>
+<style>body{margin:0;font:18px sans-serif;background:#ddd}#bar{padding:8px 12px;background:#333;color:#fff}canvas{display:block;background:#fff;cursor:crosshair}</style></head>
+<body><div id="bar">Paint &mdash; drag the mouse on the white canvas to draw. Strokes: <b id="n">0</b></div>
+<canvas id="c"></canvas>
+<script>
+const c=document.getElementById('c'),x=c.getContext('2d');c.width=innerWidth;c.height=innerHeight-40;
+let down=false,pts=[],n=0;x.lineWidth=6;x.lineCap='round';
+c.onmousedown=e=>{down=true;pts=[[e.offsetX,e.offsetY]];x.beginPath();x.moveTo(e.offsetX,e.offsetY)};
+c.onmousemove=e=>{if(down){pts.push([e.offsetX,e.offsetY]);x.lineTo(e.offsetX,e.offsetY);x.stroke()}};
+onmouseup=e=>{if(!down)return;down=false;n++;document.getElementById('n').textContent=n;
+ const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
+ fetch('/event',{method:'POST',body:JSON.stringify({type:'stroke',points:pts.length,x0:Math.min(...xs),x1:Math.max(...xs),y0:Math.min(...ys),y1:Math.max(...ys)})})};
+</script></body></html>

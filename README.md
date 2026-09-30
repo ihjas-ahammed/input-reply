@@ -111,11 +111,13 @@ The command channel uses only the Python standard library (Auth and Realtime Dat
 
 Off by default. Enable it in **Settings** (needs `pip install ".[ai]"`, which `install.sh`/`install.ps1` include) and paste a Gemini API key (or set `GEMINI_API_KEY`). The key is stored only on this computer, in an owner-only file, and is never sent to the cloud sync or shown again.
 
-You type a request such as *open WhatsApp and send Hi to Farsan*. There is no microphone input: your text goes to a Gemini Live model (`gemini-3.8-flash-live` by default, changeable in Settings), which answers by voice on this computer and as a transcript. It sees the screen through screenshots and acts with tools (click, drag, type, keys, scroll, launch an app, open a web address, focus a window, save a screenshot).
+You type a request such as *open WhatsApp and send Hi to Farsan*. There is no microphone input: your text goes to a Gemini Live model (`gemini-3.8-live` by default, changeable in Settings), which answers by voice on this computer and as a transcript. It sees the screen through screenshots and acts with tools (click, drag, type, keys, scroll, launch an app, open a web address, focus a window, save a screenshot).
 
 - **Designs once.** While it does the task for real, its actions are traced. It then saves them as a macro with named parameters (for example `friend` and `message`). The saved macro shows up in the normal recordings list, the remote web app, and `input-reply remote`, like any other.
 - **Reuses instantly.** Later requests list your saved macros to the model, so a repeat such as *send Hello to Alex* is one `run_macro` call: no screenshots and no exploring.
 - **Guard rails.** Off until enabled; the Stop button interrupts it; at most 80 tool calls per request; it cannot run shell commands; apps must be a plain program name and web addresses must be http(s); on-screen text is treated as data.
+
+The model gives positions as coordinates normalized to 0-1000 on both axes, which is how Gemini natively locates things on screen. Like any model it sometimes reports success it did not check, so read the transcript and delete a bad saved macro.
 
 It can click and type anywhere you can, and every screenshot it looks at is sent to Google. Use it on a desktop where that is acceptable, and check what it saved. Dragging (drawing) is not available on Wayland. Saved macros replay by coordinates, scaled if the screen size changes, so a moved window or a different layout can break a macro; ask the assistant to redo it.
 
@@ -134,5 +136,11 @@ Macro coordinates depend on screen layout and scale. Wayland evdev capture store
 ```sh
 python -m unittest discover -s tests -v
 ```
+
+The unit tests use a fake Gemini Live server and a simulated desktop. Three scripts check the real thing and need `GEMINI_API_KEY` (they are not part of the unit tests):
+
+- `python tests/live_check.py` confirms the Live API details (model name, message formats, the tool-call flow, frames, audio).
+- `python tests/live_agent_check.py` lets the real model drive the assistant against a simulated desktop.
+- `python tests/live_display_check.py` runs the real model against real Chrome pages (a canvas Paint app and a WhatsApp-style chat) on an isolated virtual display, with real xdotool input and real screenshots. Start `Xvfb :99 -screen 0 1280x800x24` first so your own screen is never touched.
 
 MIT licensed. See [LICENSE](LICENSE).

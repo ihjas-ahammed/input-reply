@@ -100,8 +100,7 @@ class Actuator:
             else:
                 time.sleep(step["seconds"])
         elif kind == "open_url":
-            if not webbrowser.open(step["url"]):
-                raise RuntimeError("No web browser could be opened")
+            self.open_url(step["url"])
         elif kind == "launch":
             self.launch(step["app"])
         elif kind == "focus":
@@ -176,6 +175,15 @@ class Actuator:
         else:
             self.backend.mouse_controller.scroll(dx, -dy)
 
+    def open_url(self, url):
+        # A BROWSER command containing %s makes webbrowser.open() wait until the browser quits, so never wait long.
+        outcome: list[bool] = []
+        opener = threading.Thread(target=lambda: outcome.append(webbrowser.open(url)), daemon=True)
+        opener.start()
+        opener.join(5)
+        if outcome and not outcome[0]:
+            raise RuntimeError("No web browser could be opened")
+
     def launch(self, app):
         path = shutil.which(app)
         if path:
@@ -207,7 +215,8 @@ class Actuator:
         problems = []
         if sys.platform == "win32" or self.name == "x11":
             try:
-                return ImageGrab.grab().convert("RGB")
+                display = getattr(self.backend, "display", None) if self.name == "x11" else None
+                return (ImageGrab.grab(xdisplay=display) if display else ImageGrab.grab()).convert("RGB")
             except Exception as error:  # Pillow raises OSError/ValueError depending on platform
                 problems.append(f"ImageGrab: {error}")
         for tool, build in SCREENSHOT_TOOLS:

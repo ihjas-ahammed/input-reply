@@ -50,6 +50,11 @@ class FakeLive:
             if "text" in realtime or "toolResponse" in message:
                 with self.lock:
                     batch = self.script.popleft() if self.script else [DONE]
+                if "toolResponse" in message:
+                    # The real API acknowledges a tool response with an empty finished turn before it continues.
+                    ws.send(json.dumps({"serverContent": {"generationComplete": True}}))
+                    ws.send(json.dumps({"serverContent": {"turnComplete": True}}))
+                    ws.send(json.dumps({}))
                 for item in batch:
                     ws.send(json.dumps(item(self) if callable(item) else item))
 

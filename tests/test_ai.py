@@ -82,6 +82,8 @@ class SimDesktop(Actuator):
             self.attachment = "clipboard-image"
         elif self.app == "whatsapp" and keys == "Return":
             if self.dialog is not None:
+                if not Path(self.dialog).is_file():   # a real file picker refuses paths that do not exist
+                    raise RuntimeError(f"The file picker cannot find {self.dialog!r}")
                 self.attachment, self.dialog = self.dialog, None
             elif self.field == "search":
                 matches = [c for c in CONTACTS if self.search.lower() in c.lower()]
@@ -98,7 +100,7 @@ class AiCase(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         for target in (patch.object(core, "data_dir", return_value=Path(temp.name)),
-                       patch.object(ai, "SETTLE", 0), patch.object(macros, "PAUSE", 0),
+                       patch.object(ai, "SETTLE", 0), patch.object(ai, "FRAME_SETTLE", 0), patch.object(ai, "LOAD_WAIT", {}), patch.object(macros, "PAUSE", 0),
                        patch.dict(os.environ, {"GEMINI_API_KEY": "", "GOOGLE_API_KEY": ""})):
             target.start()
             self.addCleanup(target.stop)
@@ -148,7 +150,7 @@ class DesignAndReuseTests(AiCase):
         self.assertEqual(self.desktop.sent, [("Farsan", "Hi", None)])
 
         setup = self.live.setup
-        self.assertEqual(setup["model"], "models/gemini-3.8-flash-live")
+        self.assertEqual(setup["model"], "models/gemini-3.8-live")
         self.assertEqual(setup["generationConfig"]["responseModalities"], ["AUDIO"])
         self.assertIn("outputAudioTranscription", setup)
         tools = {t["name"] for t in setup["tools"][0]["functionDeclarations"]}
@@ -179,12 +181,42 @@ class DesignAndReuseTests(AiCase):
         self.assertEqual(len(self.live.frames()), frames_before, "no screenshots are needed to reuse a macro")
         self.assertEqual(self.live.connections, 1, "the live session is reused")
 
+    def test_repeated_run_macro_never_acts_twice(self):
+        assistant = self.assistant(self.whatsapp_script())
+        self.ask(assistant, "send Hi to Farsan")
+        params = [{"name": "friend", "value": "Alex"}, {"name": "message", "value": "Hello"}]
+        self.live.extend([[call("run_macro", name="whatsapp-message.json", params=params)],
+                          [call("run_macro", name="whatsapp-message.json", params=list(reversed(params)))],
+                          [say("done"), DONE]])
+        self.ask(assistant, "send Hello to Alex")
+        self.assertEqual(self.desktop.sent, [("Farsan", "Hi", None), ("Alex", "Hello", None)])
+        self.assertIn("NOT run again", self.live.tool_responses()[-1]["response"]["note"])
+
     def test_macro_keeps_original_text_for_omitted_parameters(self):
         assistant = self.assistant(self.whatsapp_script())
         self.ask(assistant, "send Hi to Farsan")
         self.live.extend([[call("run_macro", name="whatsapp-message.json", params=[{"name": "friend", "value": "Alex"}])], [DONE]])
         self.ask(assistant, "say hi to Alex")
         self.assertEqual(self.desktop.sent[-1], ("Alex", "Hi", None))
+
+    def test_setup_done_before_tracing_is_added_to_the_macro(self):
+        script = [[call("launch_app", app="whatsapp")], [call("begin_macro")], [call("type_text", text="Farsan")],
+                  [call("press_key", keys="Return")], [call("type_text", text="Hi")], [call("press_key", keys="Return")],
+                  [call("save_macro", name="late-start", description="d")], [DONE]]
+        assistant = self.assistant(script)
+        self.ask(assistant, "send Hi to Farsan")
+        steps = core.read_recording("late-start.json")["steps"]
+        self.assertEqual([s["type"] for s in steps][:3], ["launch", "wait", "type"])
+        self.assertIn("launch", self.live.tool_responses()[-1]["response"]["note"])
+
+    def test_launching_adds_a_load_wait_to_the_macro(self):
+        script = [[call("begin_macro")], [call("launch_app", app="whatsapp")], [call("type_text", text="Farsan")],
+                  [call("save_macro", name="with-wait", description="d")], [DONE]]
+        assistant = self.assistant(script)
+        with patch.object(ai, "LOAD_WAIT", {"launch_app": 0.01}):
+            self.ask(assistant, "go")
+        steps = core.read_recording("with-wait.json")["steps"]
+        self.assertEqual([s["type"] for s in steps], ["launch", "wait", "type"])
 
     def test_parameter_that_was_never_typed_is_rejected(self):
         script = [[call("begin_macro")], [call("launch_app", app="whatsapp")], [call("type_text", text="Farsan")],
@@ -199,19 +231,19 @@ class DesignAndReuseTests(AiCase):
 
 class ScenarioTests(AiCase):
     def test_draws_in_paint_and_replays_the_drawing(self):
-        square = [{"x": 400, "y": 200}, {"x": 800, "y": 200}, {"x": 800, "y": 500}, {"x": 400, "y": 500}, {"x": 400, "y": 200}]
+        square = [{"x": 200, "y": 250}, {"x": 600, "y": 250}, {"x": 600, "y": 750}, {"x": 200, "y": 750}, {"x": 200, "y": 250}]
         script = [[call("begin_macro")], [call("launch_app", app="mspaint")], [call("wait", seconds=0.05)],
                   [call("drag", points=square)], [call("screenshot")],
                   [call("save_macro", name="draw-square", description="Draw a square in Paint")],
                   [say("Drew a square."), DONE]]
         assistant = self.assistant(script)
         self.assertEqual(self.ask(assistant, "draw a square in paint")["phase"], "done")
-        # The model works in a 1280 px wide frame; the desktop is 1920 px wide, so coordinates scale by 1.5.
-        self.assertEqual(self.desktop.strokes, [[[600, 300], [1200, 300], [1200, 750], [600, 750], [600, 300]]])
+        # The model uses normalized 0-1000 coordinates; the simulated desktop is 1920x1080.
+        self.assertEqual(self.desktop.strokes, [[[384, 270], [1152, 270], [1152, 810], [384, 810], [384, 270]]])
         frame = Image.open(io.BytesIO(base64.b64decode(self.live.frames()[-1]["realtimeInput"]["video"]["data"])))
         self.assertEqual(frame.size, (1280, 720))
-        self.assertLess(frame.getpixel((600, 200))[0], 128, "the drawn line is visible to the model")
-        self.assertGreater(frame.getpixel((600, 400))[0], 200)
+        self.assertLess(frame.getpixel((500, 180))[0], 128, "the drawn line is visible to the model")
+        self.assertGreater(frame.getpixel((500, 400))[0], 200)
 
         self.desktop.strokes.clear()
         self.live.extend([[call("run_macro", name="draw-square.json")], [DONE]])
@@ -270,11 +302,12 @@ class ScenarioTests(AiCase):
 class SafetyTests(AiCase):
     def test_unsafe_tool_arguments_never_reach_the_desktop(self):
         script = [[call("launch_app", app="x; rm -rf /")], [call("open_url", url="file:///etc/passwd")],
-                  [call("press_key", keys="ctrl+;rm")], [call("click", x=-5, y=10)], [call("no_such_tool")], [DONE]]
+                  [call("press_key", keys="ctrl+;rm")], [call("click", x=-5, y=10)], [call("click", x=1500, y=10)],
+                  [call("no_such_tool")], [DONE]]
         assistant = self.assistant(script)
         self.ask(assistant, "do bad things")
         responses = self.live.tool_responses()
-        self.assertEqual(len(responses), 5)
+        self.assertEqual(len(responses), 6)
         self.assertTrue(all("error" in r["response"] for r in responses), responses)
         self.assertEqual(self.desktop.log, [])
 

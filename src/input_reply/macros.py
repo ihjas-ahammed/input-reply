@@ -72,7 +72,9 @@ def parameterize(steps: list[dict], parameters: list[dict]) -> tuple[list[dict],
                     continue
                 rebuilt.append({"type": "type", "text": piece, **({"param": name} if piece == value and index % 2 else {})})
         if not found:
-            raise ValueError(f"The text {value!r} for parameter {name} was never typed in this macro")
+            raise ValueError(f"The text {value!r} for parameter {name} was never typed in this macro. A value picked by "
+                             "clicking cannot be a parameter. Call save_macro again without that parameter (or with only "
+                             "values you typed); do not redo the task.")
         output = rebuilt
         declared.append({"name": name})
     return output, declared

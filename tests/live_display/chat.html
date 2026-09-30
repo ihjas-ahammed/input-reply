@@ -1,0 +1,35 @@
+<!doctype html><html><head><meta charset="utf-8"><title>WhatsApp</title>
+<style>
+body{margin:0;font:20px sans-serif;display:flex;height:100vh;background:#efeae2}
+#side{width:340px;background:#fff;border-right:1px solid #ccc;padding:12px;box-sizing:border-box}
+#main{flex:1;display:flex;flex-direction:column}
+#head{background:#075e54;color:#fff;padding:14px}
+#msgs{flex:1;padding:12px;overflow:auto}
+.b{background:#dcf8c6;border-radius:8px;padding:8px 12px;margin:6px 0;max-width:70%;margin-left:auto}
+.c{padding:10px;border-radius:6px;cursor:pointer}.c:hover,.c.sel{background:#e9edef}
+input{font:20px sans-serif;padding:10px;box-sizing:border-box;width:100%}
+#bottom{padding:10px;background:#f0f0f0;display:flex;gap:8px}
+#attach{background:#fff;border-top:1px solid #ccc;padding:10px;display:none}
+button{font:20px sans-serif;padding:8px 14px}
+small{color:#555;display:block;margin:6px 0}
+</style></head><body>
+<div id="side"><b>WhatsApp</b><small>Search a name, press Enter to open the first match.</small>
+ <input id="q" placeholder="Search or start new chat" autofocus autocomplete="off"><div id="list"></div></div>
+<div id="main"><div id="head">Select a chat</div><div id="msgs"></div>
+ <div id="attach"><small>Attach a file: type its full path and press Enter to send it.</small><input id="path" placeholder="/path/to/file" autocomplete="off"></div>
+ <div id="bottom"><button id="clip" title="Attach">&#128206; Attach</button><input id="m" placeholder="Type a message" autocomplete="off"></div></div>
+<script>
+const names=['Farsan','Alex','Me'];let chat=null;
+const $=id=>document.getElementById(id);
+function render(){const q=$('q').value.toLowerCase();$('list').innerHTML='';
+ names.filter(n=>n.toLowerCase().includes(q)).forEach(n=>{const d=document.createElement('div');d.className='c'+(n===chat?' sel':'');d.textContent=n+(n==='Me'?' (You)':'');d.onclick=()=>open(n);$('list').appendChild(d)})}
+function open(n){chat=n;$('head').textContent=n;$('m').focus();render()}
+function post(o){return fetch('/event',{method:'POST',body:JSON.stringify(o)}).then(r=>r.json())}
+function bubble(t){const d=document.createElement('div');d.className='b';d.textContent=t;$('msgs').appendChild(d)}
+$('q').oninput=render;
+$('q').onkeydown=e=>{if(e.key==='Enter'){const q=$('q').value.toLowerCase();const m=names.find(n=>n.toLowerCase().includes(q));if(m)open(m)}};
+$('m').onkeydown=e=>{if(e.key==='Enter'&&chat&&$('m').value){post({type:'message',to:chat,text:$('m').value});bubble($('m').value);$('m').value=''}};
+$('clip').onclick=()=>{$('attach').style.display='block';$('path').focus()};
+$('path').onkeydown=e=>{if(e.key==='Enter'&&chat){post({type:'file',to:chat,path:$('path').value}).then(r=>{if(r.ok){bubble('[file] '+$('path').value);$('attach').style.display='none';$('path').value=''}else{alert('File not found: '+$('path').value)}})}};
+render();
+</script></body></html>
