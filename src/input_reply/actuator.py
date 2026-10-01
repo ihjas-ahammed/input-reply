@@ -79,6 +79,12 @@ class Actuator:
                 return self.backend.user32.GetSystemMetrics(0), self.backend.user32.GetSystemMetrics(1)
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
+        if self.name == "wayland":
+            try:
+                with self.screenshot() as image:
+                    return image.size
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                pass
         return None
 
     # ---- steps -----------------------------------------------------------------
@@ -227,7 +233,8 @@ class Actuator:
                 try:
                     subprocess.run(build(path), check=True, capture_output=True, timeout=20, env=self._env())
                     if Path(path).stat().st_size:
-                        return Image.open(path).convert("RGB")
+                        with Image.open(path) as image:
+                            return image.convert("RGB")
                 except (OSError, subprocess.SubprocessError) as error:
                     problems.append(f"{tool}: {error}")
         raise RuntimeError("Could not capture the screen. Install grim (Wayland), spectacle, gnome-screenshot, "

@@ -128,7 +128,9 @@ class Handler(BaseHTTPRequestHandler):
                 name = parse_qs(parsed.query).get("name", [""])[0]
                 self.reply(200, dispatch("inspect", {"name": name}, backend, state))
             elif parsed.path == "/api/cloud":
-                self.reply(200, self.cloud.status())
+                service = getattr(self.server, "cloud", None)
+                self.reply(200, service.status() if service else
+                           {"configured": False, "signed_in": False, "disabled": True})
             elif parsed.path == "/api/settings":
                 self.reply(200, self.app_settings())
             elif parsed.path == "/api/ai":

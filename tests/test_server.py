@@ -131,11 +131,10 @@ class ServerTests(unittest.TestCase):
             self.request("/api/status")
         self.assertEqual(len(calls), 1)
 
-    def test_cloud_endpoints_need_a_service(self):
-        with self.assertRaises(urllib.error.HTTPError) as caught:
-            self.request("/api/cloud")
-        self.assertEqual(caught.exception.code, 400)
-        caught.exception.close()
+    def test_cloud_status_without_service_is_disabled(self):
+        status, data = self.request("/api/cloud")
+        self.assertEqual(status, 200)
+        self.assertEqual(data, {"configured": False, "signed_in": False, "disabled": True})
 
 
 if __name__ == "__main__":

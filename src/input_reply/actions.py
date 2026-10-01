@@ -50,9 +50,11 @@ def check_backend(data, backend):
         raise RuntimeError(f"Recording uses {saved}; this desktop uses {backend.name}")
 
 
-def record_once(backend, name, duration, countdown, window_id=None, cancel=None):
+def record_once(backend, name, duration, countdown, window_id=None, cancel=None, on_started=None):
     if not wait_countdown(countdown, cancel):
         return None
+    if on_started:
+        on_started()
     target = backend.focus(window_id) if window_id is not None else backend.active_window()
     path = core.safe_path(name)
     data = backend.record(duration, path, cancel)
@@ -63,12 +65,14 @@ def record_once(backend, name, duration, countdown, window_id=None, cancel=None)
     return data
 
 
-def replay_once(backend, name, values, countdown, window_id=None, preserve=False, cancel=None):
+def replay_once(backend, name, values, countdown, window_id=None, preserve=False, cancel=None, on_started=None):
     data = core.read_recording(name)
     if data.get("format") == core.FORMAT_AGENT:
         macros.resolve(data, values)
         if not wait_countdown(countdown, cancel):
             return None, False
+        if on_started:
+            on_started()
         return {"id": "0", "title": "AI macro"}, macros.play(data, values, Actuator(backend), cancel)
     check_backend(data, backend)
     mapping = mapping_for(data, backend)
@@ -78,6 +82,8 @@ def replay_once(backend, name, values, countdown, window_id=None, preserve=False
                   if event["type"].startswith("key_") else event for event in events]
     if not wait_countdown(countdown, cancel):
         return None, False
+    if on_started:
+        on_started()
     target = backend.focus_recorded(data, window_id)
     backend.open_player()
     try:
@@ -130,6 +136,7 @@ class MacroState:
         self.desktop = Desktop(backend)
         self.lock = threading.Lock()
         self.cancel = None
+        self.on_stop = None
         self.job = {"phase": "idle", "busy": False, "message": "Ready"}
         self.version = 0
 
@@ -154,6 +161,7 @@ class MacroState:
             if self.job["busy"]:
                 raise RuntimeError("Another macro is already running")
             self.cancel = threading.Event()
+            self.on_stop = None
             self.job = {"phase": "countdown", "busy": True, "kind": kind, "name": name,
                         "message": f"Starting in {countdown:g} seconds", "started_at": time.time()}
             self.version += 1
@@ -163,16 +171,17 @@ class MacroState:
     def _run(self, kind, name, duration, countdown, window_id, values, preserve):
         try:
             if kind == "record":
-                self._set(phase="recording", message=f"Recording {name}. Press F12 or Stop to finish.")
-                data = record_once(self.backend, name, duration, countdown, window_id, self.cancel)
+                data = record_once(self.backend, name, duration, countdown, window_id, self.cancel,
+                                   on_started=lambda: self._set(phase="recording",
+                                       message=f"Recording {name}. Press F12 or Stop to finish."))
                 if data is None:
                     self._set(phase="cancelled", busy=False, message="Cancelled")
                 else:
                     self._set(phase="done", busy=False, message=f"Saved {name}")
             else:
-                self._set(phase="replaying", message=f"Replaying {name}")
                 target, completed = replay_once(self.backend, name, values, countdown,
-                                                window_id, preserve, self.cancel)
+                                                window_id, preserve, self.cancel,
+                                                on_started=lambda: self._set(phase="replaying", message=f"Replaying {name}"))
                 if completed:
                     self._set(phase="done", busy=False, message=f"Replayed {name} in {target['title']}")
                 else:
@@ -182,12 +191,13 @@ class MacroState:
         finally:
             self.desktop.invalidate()
 
-    def claim(self, kind, name, message):
+    def claim(self, kind, name, message, on_stop=None):
         """Reserve the desktop for a long-running task that manages its own thread (the AI assistant)."""
         with self.lock:
             if self.job["busy"]:
                 raise RuntimeError("Another macro is already running")
             self.cancel = threading.Event()
+            self.on_stop = on_stop
             self.job = {"phase": "replaying", "busy": True, "kind": kind, "name": name,
                         "message": message, "started_at": time.time()}
             self.version += 1
@@ -202,12 +212,17 @@ class MacroState:
 
     def stop(self):
         with self.lock:
-            if not self.job["busy"]:
+            busy = bool(self.job["busy"])
+            on_stop = self.on_stop
+            if not busy and not on_stop:
                 return False
             self.cancel.set()
-            self.job["message"] = "Stopping…"
-            self.version += 1
-            return True
+            if busy:
+                self.job["message"] = "Stopping…"
+                self.version += 1
+        if on_stop:
+            on_stop()
+        return True
 
 
 def _window_id(value, required):

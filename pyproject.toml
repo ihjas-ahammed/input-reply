@@ -35,3 +35,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 input_reply = ["web.html"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

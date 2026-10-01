@@ -327,6 +327,6 @@ def app_entrypoint():
     """Launcher for the desktop app (no console window on Windows)."""
     try:
         main(["app"])
-    except (ValueError, RuntimeError, FileNotFoundError) as error:
+    except (ValueError, RuntimeError, FileNotFoundError, json.JSONDecodeError, CloudError) as error:
         print(f"Error: {error}", file=sys.stderr)
         raise SystemExit(1)

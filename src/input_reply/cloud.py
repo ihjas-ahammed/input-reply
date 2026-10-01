@@ -207,6 +207,7 @@ class Agent:
             return self._finish(command_id, status="error", error="Remote control is turned off on this computer")
         if not isinstance(action, str) or not isinstance(args, dict) or len(json.dumps(args)) > MAX_ARGS_BYTES:
             return self._finish(command_id, status="error", error="Invalid command")
+        # REST PATCH supports multi-path keys: atomically mark running and delete params.
         # Replacement text is only needed to start the job; do not leave it in the database.
         self.db.patch(self._commands(command_id), {"status": "running", "startedAt": SERVER_TIME, "args/params": None})
         try:

@@ -213,14 +213,40 @@ class LiveSession:
 class Player:
     """Plays the model's PCM audio on this computer without blocking the assistant."""
 
-    def __init__(self):
+    def __init__(self, cancel=None):
         self.queue: queue.Queue = queue.Queue()
         self.error: str | None = None
+        self.cancel = cancel
+        self.lock = threading.RLock()
+        self.process = None
+        self.generation = 0
         threading.Thread(target=self._loop, daemon=True, name="ai-audio").start()
 
     def play(self, pcm: bytes, rate: int = 24000):
-        if pcm:
-            self.queue.put((bytes(pcm), rate))
+        with self.lock:
+            if pcm and not (self.cancel and self.cancel.is_set()):
+                self.queue.put((bytes(pcm), rate, self.generation))
+
+    def stop(self):
+        """Discard pending speech and stop the current audio child process."""
+        with self.lock:
+            self.generation += 1
+            while True:
+                try:
+                    self.queue.get_nowait()
+                    self.queue.task_done()
+                except queue.Empty:
+                    break
+            if sys.platform == "win32":
+                import winsound
+                winsound.PlaySound(None, 0)
+            if self.process and self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait(timeout=0.5)
 
     @staticmethod
     def wav(pcm: bytes, rate: int) -> bytes:
@@ -232,19 +258,43 @@ class Player:
             out.writeframes(pcm)
         return buffer.getvalue()
 
+    def _stopped(self, generation):
+        return generation != self.generation or bool(self.cancel and self.cancel.is_set())
+
     def _loop(self):
         while True:
-            pcm, rate = self.queue.get()
+            pcm, rate, generation = self.queue.get()
             try:
-                self._play_wav(self.wav(pcm, rate))
+                self._play_wav(self.wav(pcm, rate), generation)
                 self.error = None
             except Exception as error:
-                self.error = str(error)
+                if not self._stopped(generation):
+                    self.error = str(error)
+            finally:
+                self.queue.task_done()
 
-    def _play_wav(self, data: bytes):
+    def _play_wav(self, data: bytes, generation):
         if sys.platform == "win32":
             import winsound
-            winsound.PlaySound(data, winsound.SND_MEMORY)
+            # Async playback supports purging; the file stays alive until playback finishes.
+            with tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "speech.wav"
+                path.write_bytes(data)
+                with wave.open(io.BytesIO(data), "rb") as wav:
+                    duration = wav.getnframes() / wav.getframerate()
+                with self.lock:
+                    if self._stopped(generation):
+                        return
+                    winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC)
+                deadline = time.monotonic() + duration
+                while time.monotonic() < deadline:
+                    with self.lock:
+                        if self._stopped(generation):
+                            winsound.PlaySound(None, 0)
+                            return
+                    time.sleep(0.05)
+                with self.lock:
+                    winsound.PlaySound(None, 0)
             return
         commands = [["paplay"], ["pw-play"], ["aplay", "-q"], ["afplay"], ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"]]
         for command in commands:
@@ -252,8 +302,30 @@ class Player:
                 with tempfile.NamedTemporaryFile(suffix=".wav") as handle:
                     handle.write(data)
                     handle.flush()
-                    subprocess.run([*command, handle.name], check=True, timeout=120,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    with self.lock:
+                        if self._stopped(generation):
+                            return
+                        process = subprocess.Popen([*command, handle.name],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        self.process = process
+                    deadline = time.monotonic() + 120
+                    try:
+                        while process.poll() is None:
+                            if self._stopped(generation):
+                                self.stop()
+                                return
+                            if time.monotonic() >= deadline:
+                                raise subprocess.TimeoutExpired(command, 120)
+                            time.sleep(0.05)
+                        if process.returncode and not self._stopped(generation):
+                            raise subprocess.CalledProcessError(process.returncode, command)
+                    finally:
+                        with self.lock:
+                            if process.poll() is None:
+                                process.kill()
+                            process.wait()
+                            if self.process is process:
+                                self.process = None
                 return
         raise RuntimeError("No audio player found (paplay, pw-play, aplay, afplay, or ffplay)")
 
@@ -279,6 +351,7 @@ class Assistant:
         self.actuator = actuator or Actuator(backend)
         self.connect_factory = connect_factory or self._default_connect
         self.player = player
+        self.audio_cancel = None
         self.session: LiveSession | None = None
         self.lock = threading.Lock()
         self.entries: deque = deque(maxlen=MAX_LOG)
@@ -309,7 +382,10 @@ class Assistant:
             raise ValueError("Write a request of up to 2000 characters")
         if not api_key():
             raise RuntimeError("Add a Gemini API key in Settings first")
-        cancel = self.state.claim("ai", "assistant", "AI assistant is working")
+        cancel = self.state.claim("ai", "assistant", "AI assistant is working", on_stop=self._stop_audio)
+        self.audio_cancel = cancel
+        if isinstance(self.player, Player):
+            self.player.cancel = cancel
         threading.Thread(target=self._run, args=(text.strip(), cancel), daemon=True, name="ai-assistant").start()
         return {"status": "started"}
 
@@ -319,6 +395,7 @@ class Assistant:
         self.close()
 
     def close(self):
+        self._stop_audio()
         if self.session:
             self.session.close()
             self.session = None
@@ -351,6 +428,11 @@ class Assistant:
         return self.session
 
     # ---- request loop ----------------------------------------------------------
+    def _stop_audio(self):
+        stop = getattr(self.player, "stop", None)
+        if callable(stop):
+            stop()
+
     def _run(self, text: str, cancel: threading.Event):
         self.trace, self.recording, self.auto_frames, self.prelude = [], False, True, []
         self.ran = {}   # macros already run for this request, so a repeated call never acts twice
@@ -364,6 +446,7 @@ class Assistant:
             self._converse(session, cancel)
             self._flush_speech()
             if cancel.is_set():
+                self._stop_audio()
                 self.close()   # the model may still be mid-turn; do not reuse this session
                 self.state.release("cancelled", "AI stopped")
                 self.log("system", "Stopped.")
@@ -430,8 +513,10 @@ class Assistant:
                 raise RuntimeError(f"Gemini Live error: {message['error']}")
 
     def _speak(self, audio: bytearray, rate: int):
+        if self.audio_cancel and self.audio_cancel.is_set():
+            return
         if audio and self.player == "auto" and settings.load()["ai_voice"]:
-            self.player = Player()   # created on first use so a disabled assistant costs nothing
+            self.player = Player(self.audio_cancel)   # created on first use so a disabled assistant costs nothing
         if audio and self.player and self.player != "auto" and settings.load()["ai_voice"]:
             self.player.play(bytes(audio), rate)
         audio.clear()
@@ -524,7 +609,9 @@ class Assistant:
             return {"type": "launch", "app": args["app"]}
         if name == "open_url":
             return {"type": "open_url", "url": args["url"]}
-        return {"type": "focus", "title": args["title"]}
+        if name == "focus_window":
+            return {"type": "focus", "title": args["title"]}
+        raise ValueError(f"Unknown action: {name}")
 
     def _t_screenshot(self, args, cancel, session):
         self._capture(session)
