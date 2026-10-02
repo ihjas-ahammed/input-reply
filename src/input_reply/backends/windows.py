@@ -22,6 +22,7 @@ class WindowsBackend:
         self.keyboard_controller = None
         self.mouse_controller = None
         self.user32 = ctypes.windll.user32
+        self.kernel32 = ctypes.windll.kernel32
         self.user32.GetForegroundWindow.restype = ctypes.c_void_p
         self.user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
         self.user32.GetWindowTextLengthW.argtypes = [ctypes.c_void_p]
@@ -31,6 +32,17 @@ class WindowsBackend:
         self.user32.ShowWindowAsync.argtypes = [ctypes.c_void_p, ctypes.c_int]
         self.user32.IsWindow.argtypes = [ctypes.c_void_p]
         self.user32.IsIconic.argtypes = [ctypes.c_void_p]
+
+    def _ensure_desktop(self):
+        try:
+            if hasattr(self.user32, "OpenInputDesktop") and hasattr(self.user32, "SetThreadDesktop"):
+                hdesk = self.user32.OpenInputDesktop(0, False, 0x01FF)
+                if hdesk:
+                    self.user32.SetThreadDesktop(hdesk)
+                    if hasattr(self.user32, "CloseDesktop"):
+                        self.user32.CloseDesktop(hdesk)
+        except Exception:
+            pass
 
     def available(self):
         try:
@@ -46,12 +58,14 @@ class WindowsBackend:
         return buf.value[:180] or "Untitled window"
 
     def active_window(self):
+        self._ensure_desktop()
         ident = self.user32.GetForegroundWindow()
         if not ident:
             raise RuntimeError("Focus a desktop window before recording")
         return {"id": str(ident), "title": self._title(ident)}
 
     def windows(self):
+        self._ensure_desktop()
         result = []
         callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
@@ -89,14 +103,42 @@ class WindowsBackend:
     def focus(self, ident, timeout=15.0, cancel=None):
         if not str(ident).isdecimal() or int(ident) <= 0:
             raise ValueError("Invalid window ID")
+        self._ensure_desktop()
         hwnd = ctypes.c_void_p(int(ident))
         if not self.user32.IsWindow(hwnd):
-            raise RuntimeError("The selected window has closed. Refresh the window list and choose it again.")
-        if self.user32.GetForegroundWindow() == int(ident):
+            self._ensure_desktop()
+            if not self.user32.IsWindow(hwnd):
+                raise RuntimeError("The selected window has closed. Refresh the window list and choose it again.")
+        fg = self.user32.GetForegroundWindow()
+        if fg == int(ident):
             return self.active_window()
         if self.user32.IsIconic(hwnd):
             self.user32.ShowWindowAsync(hwnd, 9)
-        self.user32.SetForegroundWindow(hwnd)
+        else:
+            self.user32.ShowWindowAsync(hwnd, 5)
+
+        kernel32 = getattr(self, "kernel32", None) or ctypes.windll.kernel32
+        fore_thread = None
+        if fg and hasattr(self.user32, "GetWindowThreadProcessId"):
+            fore_thread = self.user32.GetWindowThreadProcessId(fg, None)
+        curr_thread = kernel32.GetCurrentThreadId() if hasattr(kernel32, "GetCurrentThreadId") else None
+        attached = False
+        if fore_thread and curr_thread and fore_thread != curr_thread and hasattr(self.user32, "AttachThreadInput"):
+            try:
+                attached = bool(self.user32.AttachThreadInput(curr_thread, fore_thread, True))
+            except Exception:
+                attached = False
+        try:
+            if hasattr(self.user32, "BringWindowToTop"):
+                self.user32.BringWindowToTop(hwnd)
+            self.user32.SetForegroundWindow(hwnd)
+        finally:
+            if attached and hasattr(self.user32, "AttachThreadInput"):
+                try:
+                    self.user32.AttachThreadInput(curr_thread, fore_thread, False)
+                except Exception:
+                    pass
+
         # Activation is asynchronous and Windows may refuse it. Allow the user
         # to activate the target without capturing that click or sending input
         # elsewhere. Do not repeatedly steal focus while waiting.
@@ -105,7 +147,9 @@ class WindowsBackend:
             if self.user32.GetForegroundWindow() == int(ident):
                 return self.active_window()
             if not self.user32.IsWindow(hwnd):
-                raise RuntimeError("The selected window has closed. Refresh the window list and choose it again.")
+                self._ensure_desktop()
+                if not self.user32.IsWindow(hwnd):
+                    raise RuntimeError("The selected window has closed. Refresh the window list and choose it again.")
             if cancel is not None and cancel.is_set():
                 return None
             if time.monotonic() >= deadline:
@@ -124,6 +168,9 @@ class WindowsBackend:
             try:
                 if self.user32.IsWindow(ctypes.c_void_p(int(ident))) and (not title or self._title(ident) == title):
                     return self.focus(ident, cancel=cancel)
+            except RuntimeError as err:
+                if "closed" not in str(err).lower():
+                    raise
             except (ValueError, OSError):
                 pass
         open_wins = self.windows()
