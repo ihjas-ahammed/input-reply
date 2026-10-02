@@ -236,9 +236,24 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, self.app_settings())
 
 
-def make_server(host="127.0.0.1", port=8765, backend=None, cloud=None):
+def make_server(host="127.0.0.1", port=8765, backend=None, cloud=None, auto_port=True):
     backend = backend or select_backend()
-    server = ThreadingHTTPServer((host, port), Handler)
+    actual_port = int(port)
+    try:
+        server = ThreadingHTTPServer((host, actual_port), Handler)
+    except OSError:
+        if not auto_port:
+            raise
+        from .lockfile import find_available_port
+        alt_port = find_available_port(start_port=actual_port + 1, host=host)
+        print(f"Port {actual_port} is occupied by another application. Using alternate port {alt_port} instead.", flush=True)
+        actual_port = alt_port
+        server = ThreadingHTTPServer((host, actual_port), Handler)
+
+    from .lockfile import write_service_lock
+    write_service_lock(actual_port, host, os.getpid())
+
+    server.actual_port = actual_port
     server.daemon_threads = True
     server.backend = backend
     server.state = MacroState(backend)
@@ -249,11 +264,14 @@ def make_server(host="127.0.0.1", port=8765, backend=None, cloud=None):
 
 
 def serve(host="127.0.0.1", port=8765, backend=None):
+    from .lockfile import clear_service_lock
     server = make_server(host, port, backend)
-    print(f"Input Reply listening on {host}:{port} ({server.backend.name})", flush=True)
+    actual_port = getattr(server, "actual_port", port)
+    print(f"Input Reply listening on {host}:{actual_port} ({server.backend.name})", flush=True)
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         server.state.stop()
     finally:
+        clear_service_lock(only_if_pid=os.getpid())
         server.server_close()

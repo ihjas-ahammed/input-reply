@@ -1,22 +1,26 @@
 """Command line interface for people and automation clients."""
 
 import argparse
+import ctypes
 import getpass
 import json
 import os
 import signal
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from . import autostart, core, settings
 from .actions import mapping_for, record_once, replay_once, repeat_count, seconds, speed_factor
 from .backends import select_backend
-from .desktop import DEFAULT_PORT, open_app, probe, run_service, run_window
+from .desktop import open_app, run_service, run_window
 from .firebase import CloudError, Session, load_config
 from .cloud import RemoteClient
+from .lockfile import DEFAULT_PORT, get_active_service_port, probe
 from .server import access_token, serve
 
 
@@ -229,9 +233,42 @@ def main(argv=None):
     start.add_argument("--host", default="127.0.0.1")
     start.add_argument("--port", type=int, default=DEFAULT_PORT)
     sub.add_parser("remove-autostart", help="Remove automatic startup")
+
+    shot = sub.add_parser("screenshot", help="Capture a desktop or window screenshot")
+    shot.add_argument("output", nargs="?", default=None, help="Output PNG path (optional)")
+    shot.add_argument("--window-id", help="Crop to specific window ID")
+
+    foc = sub.add_parser("focus", help="Focus a desktop window by ID or title")
+    foc.add_argument("target", help="Window ID or partial window title")
+
+    hm = sub.add_parser("human-move", help="Move cursor smoothly along a natural human curve")
+    hm.add_argument("x", type=int, help="Target X coordinate")
+    hm.add_argument("y", type=int, help="Target Y coordinate")
+    hm.add_argument("--duration", type=float, default=None, help="Movement duration in seconds")
+
+    hc = sub.add_parser("human-click", help="Move to coordinates and click with human timing")
+    hc.add_argument("x", type=int, nargs="?", default=None, help="Target X coordinate")
+    hc.add_argument("y", type=int, nargs="?", default=None, help="Target Y coordinate")
+    hc.add_argument("--button", default="left", choices=["left", "right", "middle"])
+
+    tt = sub.add_parser("type-text", help="Type text into currently focused window")
+    tt.add_argument("text", help="Text to type")
+    tt.add_argument("--human", action="store_true", help="Use human-like keystroke intervals")
+
+    create = sub.add_parser("create", help="Create a new macro from script or template")
+    create.add_argument("name", help="Macro name (e.g. macro.json)")
+    create.add_argument("--window-id", help="Target window ID")
+    create.add_argument("--title", help="Target window title")
+    create.add_argument("--code-file", help="Python code file to populate")
+
     args = parser.parse_args(argv)
     args.command = args.command or "app"
     _scope_account()
+
+    # Resolve active service port from service.lock if not explicitly overridden
+    active_port = get_active_service_port(default=DEFAULT_PORT)
+    if hasattr(args, "port") and args.port == DEFAULT_PORT and active_port != DEFAULT_PORT:
+        args.port = active_port
 
     if args.command == "serve":
         serve(args.host, args.port)
@@ -320,7 +357,89 @@ def main(argv=None):
             finally:
                 _restore_sigint(prior)
             print(f"Saved {name}" if data else "Cancelled")
-        else:
+        elif args.command == "screenshot":
+            from .actuator import Actuator
+            actuator = Actuator(backend)
+            bbox = None
+            if args.window_id and hasattr(backend, "user32"):
+                try:
+                    class RECT(ctypes.Structure):
+                        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+                    rect = RECT()
+                    hwnd = ctypes.c_void_p(int(args.window_id))
+                    if hasattr(backend.user32, "GetWindowRect") and backend.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                        bbox = (rect.left, rect.top, rect.right, rect.bottom)
+                except Exception:
+                    pass
+            out_path = args.output
+            if not out_path:
+                ts = int(time.time())
+                out_path = str(core.data_dir() / f"screenshot_{ts}.png")
+            actuator.screenshot(bbox=bbox, path=out_path)
+            print(str(Path(out_path).resolve()))
+        elif args.command == "focus":
+            target = args.target
+            found = None
+            if str(target).isdecimal() and hasattr(backend, "focus"):
+                try:
+                    found = backend.focus(str(target))
+                except Exception:
+                    pass
+            if not found and hasattr(backend, "windows"):
+                for win in backend.windows():
+                    if target.lower() in win.get("title", "").lower():
+                        found = backend.focus(win["id"])
+                        break
+            if found:
+                print(f"Focused: {found['title']} (id: {found['id']})")
+            else:
+                raise RuntimeError(f"Window matching '{target}' not found")
+        elif args.command == "human-move":
+            from .actuator import Actuator
+            Actuator(backend).human_move(args.x, args.y, duration=args.duration)
+            print(f"Moved mouse to ({args.x}, {args.y})")
+        elif args.command == "human-click":
+            from .actuator import Actuator
+            Actuator(backend).human_click(args.x, args.y, button=args.button)
+            if args.x is not None and args.y is not None:
+                print(f"Clicked ({args.x}, {args.y}) with {args.button} button")
+            else:
+                print(f"Clicked with {args.button} button")
+        elif args.command == "type-text":
+            from .actuator import Actuator
+            if args.human:
+                Actuator(backend).human_type(args.text)
+            else:
+                backend.open_player()
+                try:
+                    backend.type_text(args.text)
+                finally:
+                    backend.close_player()
+            preview = args.text[:30] + "..." if len(args.text) > 30 else args.text
+            print(f"Typed text: {preview}")
+        elif args.command == "create":
+            from . import scripting
+            name = core.new_name(args.name)
+            target = {"id": args.window_id or "0", "title": args.title or "Desktop Window"}
+            data = {
+                "format": "input-reply-v1",
+                "backend": backend.name,
+                "duration": 0.0,
+                "events": [],
+                "target_window": target,
+                "recorded_at": datetime.now().astimezone().isoformat(timespec="seconds")
+            }
+            if args.code_file:
+                code = Path(args.code_file).read_text(encoding="utf-8")
+                data["python_code"] = code
+            core.write_recording(name, data)
+            if not args.code_file:
+                py_code = scripting.macro_to_python(data, name)
+                py_path = core.safe_path(name).with_suffix(".py")
+                py_path.write_text(py_code, encoding="utf-8")
+            print(f"Created macro: {name}")
+        elif args.command in {"run", "replay"}:
             if not backend.available():
                 raise RuntimeError("Interactive desktop is unavailable; run input-reply doctor")
             values = _values(args)
@@ -335,8 +454,8 @@ def main(argv=None):
             finally:
                 _restore_sigint(prior)
             result = {"recording": args.name, "target": target["title"] if target else None,
-                      "completed": completed, "parameters_overridden": sorted(values),
-                      "repeat": repeat, "speed": speed}
+                       "completed": completed, "parameters_overridden": sorted(values),
+                       "repeat": repeat, "speed": speed}
             print(json.dumps(result) if args.json else
                   f"Replayed {args.name} ({repeat} times) in {target['title']}" if completed and repeat > 1 else
                   f"Replayed {args.name} in {target['title']}" if completed else "Cancelled")

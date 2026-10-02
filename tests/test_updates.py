@@ -74,7 +74,7 @@ class UpdatesTests(unittest.TestCase):
              patch.object(core, "substitute", return_value=recording["events"]), \
              patch.object(actions, "start_stop_hotkey", return_value=None):
             target, completed = actions.replay_once(
-                backend, "macro.json", {}, countdown=0,
+                backend, "test_unit_mock_macro.json", {}, countdown=0,
                 repeat=3, speed=10.0,
                 on_iteration=lambda cur, total: iterations.append((cur, total))
             )
@@ -122,7 +122,7 @@ class UpdatesTests(unittest.TestCase):
              patch.object(core, "substitute", return_value=recording["events"]), \
              patch.object(actions, "start_stop_hotkey", return_value=None):
             target, completed = actions.replay_once(
-                backend, "macro.json", {}, countdown=0, cancel=cancel,
+                backend, "test_unit_mock_macro.json", {}, countdown=0, cancel=cancel,
                 repeat=10, speed=10.0, on_iteration=on_iter
             )
 

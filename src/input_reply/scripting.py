@@ -54,6 +54,51 @@ class MacroContext:
         elif hasattr(self.backend, "emit"):
             self.backend.emit({"type": "motion", "x": x, "y": y})
 
+    def human_move(self, x: int, y: int, duration: float | None = None) -> None:
+        """Smoothly move mouse cursor to (x, y) along a natural curved trajectory."""
+        if self.is_cancelled():
+            return
+        from .actuator import Actuator
+        Actuator(self.backend).human_move(x, y, duration=duration, cancel=self.cancel)
+
+    def human_click(self, x: int | None = None, y: int | None = None, button: str = "left") -> None:
+        """Move human-like to coordinates (if given) and click with realistic human button timing."""
+        if self.is_cancelled():
+            return
+        from .actuator import Actuator
+        Actuator(self.backend).human_click(x, y, button=button, cancel=self.cancel)
+
+    def human_type(self, text: str, min_delay: float = 0.03, max_delay: float = 0.08) -> None:
+        """Type text with realistic human typing intervals."""
+        if self.is_cancelled() or not text:
+            return
+        from .actuator import Actuator
+        Actuator(self.backend).human_type(text, min_delay=min_delay, max_delay=max_delay, cancel=self.cancel)
+
+    def screenshot(self, path: str | Path | None = None, bbox: tuple[int, int, int, int] | None = None):
+        """Take a screenshot of the desktop, optionally saving to path and/or cropped to bbox."""
+        if self.is_cancelled():
+            return None
+        from .actuator import Actuator
+        return Actuator(self.backend).screenshot(bbox=bbox, path=path)
+
+    def focus(self, title_or_id: str | int) -> dict | None:
+        """Focus a target window by its ID or title."""
+        if self.is_cancelled():
+            return None
+        if hasattr(self.backend, "focus"):
+            try:
+                if str(title_or_id).isdecimal():
+                    return self.backend.focus(str(title_or_id), cancel=self.cancel)
+            except Exception:
+                pass
+        if hasattr(self.backend, "windows"):
+            wanted = str(title_or_id).lower()
+            for win in self.backend.windows():
+                if wanted in win.get("title", "").lower():
+                    return self.backend.focus(win["id"], cancel=self.cancel)
+        return None
+
     def mouse_down(self, button: str = "left") -> None:
         """Press mouse button down ('left', 'right', 'middle')."""
         if self.is_cancelled():
@@ -189,15 +234,20 @@ Available context methods:
   context.params                       - Dictionary of replay parameters passed in
   context.speed                        - Playback speed multiplier
   context.sleep(seconds)               - Wait/pause in seconds (scaled by speed)
-  context.click(x, y, button="left")   - Click at coordinates
+  context.human_move(x, y)             - Smoothly move cursor along natural human curve
+  context.human_click(x, y, button)    - Move & click with realistic human timing
+  context.human_type(text)             - Type with realistic human keystroke intervals
+  context.click(x, y, button="left")   - Direct click at coordinates
   context.double_click(x, y)           - Double click at coordinates
-  context.mouse_move(x, y)             - Move cursor to coordinates
+  context.mouse_move(x, y)             - Direct move cursor to coordinates
   context.mouse_down(button="left")
   context.mouse_up(button="left")
   context.drag(x1, y1, x2, y2)         - Drag mouse between coordinates
   context.type_text(text)              - Type string into focused window
   context.press_key(key)               - Press & release key ('enter', 'tab', etc.)
   context.hotkey(*keys)                - Key combination (e.g. 'ctrl', 'v')
+  context.screenshot(path="shot.png")  - Take screenshot to inspect or verify UI
+  context.focus(title_or_id)           - Switch focus to another window
   context.is_cancelled()               - Check if user cancelled
 """
 

@@ -20,18 +20,10 @@ import webbrowser
 
 from . import autostart, settings
 from .cloud import CloudService
+from .lockfile import (DEFAULT_PORT, clear_service_lock, get_active_service_port,
+                       probe, write_service_lock)
+from .network import NetworkMonitor
 from .server import access_token, make_server
-
-DEFAULT_PORT = 8765
-
-
-def probe(port: int, host: str = "127.0.0.1") -> bool:
-    """True when an Input Reply service already answers on this port."""
-    try:
-        with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=1.5) as response:
-            return json.load(response).get("app") == "input-reply"
-    except (OSError, ValueError):
-        return False
 
 
 def _spawn(*args: str) -> subprocess.Popen:
@@ -95,28 +87,43 @@ def _run_tray(port: int, cloud: CloudService) -> bool:
 
 
 def run_service(host: str = "127.0.0.1", port: int = DEFAULT_PORT, tray: bool = True, enable_autostart: bool = True):
-    if probe(port):
-        print(f"Input Reply is already running on port {port}", flush=True)
+    active_port = get_active_service_port(default=port, host=host)
+    if probe(active_port, host):
+        print(f"Input Reply is already running on port {active_port}", flush=True)
         return
     server = make_server(host, port)
+    actual_port = getattr(server, "actual_port", port)
     cloud = CloudService(server.backend, server.state)
     server.cloud = cloud
     cloud.start_saved()
     if enable_autostart and not settings.load()["autostart_configured"]:
         # First launch after install: register startup at login. The user can turn it off from the tray or UI.
         try:
-            autostart.install(host, port)
+            autostart.install(host, actual_port)
         finally:
             settings.update(autostart_configured=True)
+
+    def on_net_change(old_state, new_state):
+        print(f"[Network] Network configuration changed. Reconnecting cloud...", flush=True)
+        try:
+            cloud.reconnect()
+        except Exception:
+            pass
+
+    net_mon = NetworkMonitor(on_change=on_net_change)
+    net_mon.start()
+
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True).start()
-    print(f"Input Reply service on {host}:{port} ({server.backend.name})", flush=True)
+    print(f"Input Reply service on {host}:{actual_port} ({server.backend.name})", flush=True)
     try:
-        if not (tray and _run_tray(port, cloud)):
+        if not (tray and _run_tray(actual_port, cloud)):
             while True:
                 time.sleep(3600)
     except KeyboardInterrupt:
         pass
     finally:
+        net_mon.stop()
+        clear_service_lock(only_if_pid=os.getpid())
         server.state.stop()
         cloud.shutdown()
         server.shutdown()
@@ -149,7 +156,8 @@ class DesktopBridge:
 
 
 def run_window(port: int = DEFAULT_PORT):
-    url = f"http://127.0.0.1:{port}/#token={access_token()}"   # fragment stays in the client; the page removes it
+    actual_port = get_active_service_port(default=DEFAULT_PORT) if port == DEFAULT_PORT else port
+    url = f"http://127.0.0.1:{actual_port}/#token={access_token()}"   # fragment stays in the client; the page removes it
     try:
         import webview
     except ImportError:
@@ -157,16 +165,21 @@ def run_window(port: int = DEFAULT_PORT):
         webbrowser.open(url)
         return
     webview.create_window("Input Reply", url, width=1200, height=820, min_size=(420, 560),
-                          js_api=DesktopBridge(port))
+                          js_api=DesktopBridge(actual_port))
     webview.start()
 
 
 def open_app(port: int = DEFAULT_PORT):
-    if not probe(port):
-        _spawn("service", "--port", str(port))
+    actual_port = get_active_service_port(default=DEFAULT_PORT) if port == DEFAULT_PORT else port
+    if not probe(actual_port):
+        _spawn("service", "--port", str(actual_port))
         deadline = time.monotonic() + 20
-        while time.monotonic() < deadline and not probe(port):
+        while time.monotonic() < deadline:
+            current = get_active_service_port(default=actual_port)
+            if probe(current):
+                actual_port = current
+                break
             time.sleep(0.25)
-        if not probe(port):
+        if not probe(actual_port):
             raise RuntimeError("The Input Reply service did not start. Run: input-reply service")
-    run_window(port)
+    run_window(actual_port)
