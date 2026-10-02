@@ -95,6 +95,35 @@ class WindowsFocusTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no other open desktop windows were found"):
             backend.focus_recorded({"target_window": {"id": "42", "title": "Gone Window"}})
 
+    def test_cursor_position_and_set_cursor_calls_ensure_desktop(self):
+        backend = self.backend([7])
+        backend._ensure_desktop = Mock()
+        backend.user32.GetCursorPos = Mock(return_value=0)
+        backend.cursor_position()
+        backend._ensure_desktop.assert_called()
+
+        backend._ensure_desktop.reset_mock()
+        backend.user32.SetCursorPos = Mock(return_value=0)
+        backend.set_cursor_position(100, 200)
+        backend._ensure_desktop.assert_called()
+
+    def test_record_once_generates_python_script_file(self):
+        import tempfile
+        from pathlib import Path
+        backend = self.backend([42])
+        backend.focus = Mock(return_value={"id": "42", "title": "Editor"})
+        backend.record = Mock(return_value={"format": "input-reply-v1", "duration": 1.0, "events": []})
+
+        with tempfile.TemporaryDirectory() as td:
+            with patch("input_reply.core.recordings_dir", return_value=Path(td)):
+                actions.record_once(backend, "test_gen.json", 1, 0, window_id="42")
+                py_path = Path(td) / "test_gen.py"
+                self.assertTrue(py_path.exists())
+                content = py_path.read_text(encoding="utf-8")
+                self.assertIn("def run(context):", content)
+                self.assertIn("Editor", content)
+
 
 if __name__ == "__main__":
     unittest.main()
+

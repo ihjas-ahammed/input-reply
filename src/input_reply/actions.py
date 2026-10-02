@@ -9,8 +9,9 @@ from __future__ import annotations
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 
-from . import core, macros
+from . import core, macros, scripting
 from .actuator import Actuator
 from .backends.windows import WindowsBackend
 
@@ -98,8 +99,17 @@ def start_stop_hotkey(cancel):
         if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
             ctrl_keys.discard(key)
 
+    class DesktopStopListener(keyboard.Listener):
+        def _run(self):
+            try:
+                from .backends.windows import ensure_input_desktop
+                ensure_input_desktop()
+            except Exception:
+                pass
+            super()._run()
+
     try:
-        listener = keyboard.Listener(
+        listener = DesktopStopListener(
             on_press=on_press,
             on_release=on_release,
             win32_event_filter=win32_event_filter
@@ -109,7 +119,18 @@ def start_stop_hotkey(cancel):
         listener.start()
         return listener
     except Exception:
-        return None
+        try:
+            listener = keyboard.Listener(
+                on_press=on_press,
+                on_release=on_release,
+                win32_event_filter=win32_event_filter
+            )
+            listener_ref[0] = listener
+            listener.daemon = True
+            listener.start()
+            return listener
+        except Exception:
+            return None
 
 
 def wait_countdown(value, cancel=None):
@@ -139,6 +160,12 @@ def check_backend(data, backend):
 
 
 def record_once(backend, name, duration, countdown, window_id=None, cancel=None, on_started=None, on_focusing=None):
+    if getattr(backend, "name", "") == "windows" or isinstance(backend, WindowsBackend):
+        try:
+            from .backends.windows import ensure_input_desktop
+            ensure_input_desktop()
+        except Exception:
+            pass
     if not wait_countdown(countdown, cancel):
         return None
     if window_id is not None and on_focusing:
@@ -149,32 +176,69 @@ def record_once(backend, name, duration, countdown, window_id=None, cancel=None,
         target = backend.focus(window_id) if window_id is not None else backend.active_window()
     if target is None or (cancel and cancel.is_set()):
         return None
+    if hasattr(backend, "center_cursor_on_window") and target.get("id"):
+        try:
+            backend.center_cursor_on_window(target["id"])
+            time.sleep(0.05)
+        except Exception:
+            pass
     if on_started:
         on_started()
     path = core.safe_path(name)
     data = backend.record(duration, path, cancel)
+    if data is None:
+        return None
     data["target_window"] = target
     data["recorded_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
     data["backend"] = backend.name
     core.write_recording(name, data)
+    # Generate initial Python macro script for logic editing
+    try:
+        from . import scripting
+        py_code = scripting.macro_to_python(data, name)
+        py_file = path.with_suffix(".py")
+        py_file.write_text(py_code, encoding="utf-8")
+    except Exception:
+        pass
     return data
 
 
 def replay_once(backend, name, values, countdown, window_id=None, preserve=False, cancel=None,
                 on_started=None, on_focusing=None, speed=1.0, repeat=1, on_iteration=None):
+    if getattr(backend, "name", "") == "windows" or isinstance(backend, WindowsBackend):
+        try:
+            from .backends.windows import ensure_input_desktop
+            ensure_input_desktop()
+        except Exception:
+            pass
     if cancel is None:
         cancel = threading.Event()
     data = core.read_recording(name)
     is_agent = (data.get("format") == core.FORMAT_AGENT)
-    if is_agent:
-        macros.resolve(data, values)
-    else:
-        check_backend(data, backend)
-        mapping = mapping_for(data, backend)
-        events = core.substitute(data, values, mapping)
-        if mapping:
-            events = [event | {"key": mapping.get(event["code"], "")}
-                      if event["type"].startswith("key_") else event for event in events]
+
+    safe = core.safe_path(name)
+    py_path = safe.with_suffix(".py") if isinstance(safe, Path) else None
+    custom_python = None
+    if isinstance(py_path, Path) and py_path.is_file():
+        try:
+            code = py_path.read_text(encoding="utf-8")
+            if isinstance(code, str) and code.strip():
+                custom_python = code
+        except Exception:
+            pass
+    if not custom_python and isinstance(data.get("python_code"), str):
+        custom_python = data["python_code"]
+
+    if not custom_python:
+        if is_agent:
+            macros.resolve(data, values)
+        else:
+            check_backend(data, backend)
+            mapping = mapping_for(data, backend)
+            events = core.substitute(data, values, mapping)
+            if mapping:
+                events = [event | {"key": mapping.get(event["code"], "")}
+                          if event["type"].startswith("key_") else event for event in events]
 
     stop_listener = start_stop_hotkey(cancel)
     try:
@@ -228,7 +292,9 @@ def replay_once(backend, name, values, countdown, window_id=None, preserve=False
             if iteration == 0 and on_started:
                 on_started()
 
-            if is_agent:
+            if custom_python:
+                success = scripting.execute_python_macro(custom_python, backend, params=values, speed=speed, cancel=cancel)
+            elif is_agent:
                 success = macros.play(data, values, Actuator(backend), cancel, speed)
             else:
                 backend.open_player()
@@ -330,6 +396,12 @@ class MacroState:
 
     def _run(self, kind, name, duration, countdown, window_id, values, preserve, repeat=1, speed=1.0):
         try:
+            if getattr(self.backend, "name", "") == "windows" or isinstance(self.backend, WindowsBackend):
+                try:
+                    from .backends.windows import ensure_input_desktop
+                    ensure_input_desktop()
+                except Exception:
+                    pass
             if kind == "record":
                 data = record_once(self.backend, name, duration, countdown, window_id, self.cancel,
                                    on_focusing=lambda: self._set(phase="focusing",
@@ -451,7 +523,12 @@ def _replay(args, backend, state):
     countdown = seconds(args.get("countdown", 3), 30)
     data = core.read_recording(name)
     values = args.get("params", {})
-    if data.get("format") == core.FORMAT_AGENT:
+    safe = core.safe_path(name)
+    py_path = safe.with_suffix(".py") if isinstance(safe, Path) else None
+    has_python = bool(data.get("python_code") or (isinstance(py_path, Path) and py_path.is_file()))
+    if has_python:
+        pass
+    elif data.get("format") == core.FORMAT_AGENT:
         macros.resolve(data, values)
     else:
         check_backend(data, backend)
@@ -485,13 +562,32 @@ def _parameter_remove(args, backend, state):
     return core.remove_parameter(name, args.get("parameter"), mapping)
 
 
+def _script(args, backend, state):
+    name = args.get("name")
+    if not name:
+        raise ValueError("Macro name is required")
+    op = args.get("op")
+    if op is None:
+        op = "reset" if args.get("reset") else ("save" if "code" in args else "get")
+    if op == "save":
+        _idle(state, "saving script")
+        code = args.get("code", "")
+        return scripting.save_macro_script(name, code)
+    elif op == "reset":
+        _idle(state, "resetting script")
+        return scripting.reset_macro_script(name)
+    else:
+        return scripting.get_macro_script(name)
+
+
 ACTIONS = {"status": _status, "recordings": _recordings, "windows": _windows, "inspect": _inspect,
            "record": _record, "replay": _replay, "stop": _stop, "delete": _delete,
-           "parameter_add": _parameter_add, "parameter_remove": _parameter_remove}
+           "parameter_add": _parameter_add, "parameter_remove": _parameter_remove,
+           "script": _script}
 # Actions that only start a job; the HTTP API answers these with 202.
 STARTS_JOB = {"record", "replay"}
 # Actions that change the recording list or its parameters, so a remote catalog goes stale.
-CHANGES_CATALOG = {"record", "delete", "parameter_add", "parameter_remove"}
+CHANGES_CATALOG = {"record", "delete", "parameter_add", "parameter_remove", "script"}
 
 
 def dispatch(action, args, backend, state):

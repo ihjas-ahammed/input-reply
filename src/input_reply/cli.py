@@ -220,6 +220,11 @@ def main(argv=None):
     run.add_argument("--repeat", type=int, default=1, help="Number of times to repeat the macro")
     run.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier (e.g. 1.5, 2.0)")
     run.add_argument("--json", action="store_true")
+    script_p = sub.add_parser("script", help="View, edit, or reset Python logic for a macro")
+    script_p.add_argument("name")
+    script_p.add_argument("--save", metavar="FILE", help="Save Python code from file into macro")
+    script_p.add_argument("--export", metavar="FILE", help="Export Python code to file")
+    script_p.add_argument("--reset", action="store_true", help="Reset Python code to default generated steps")
     start = sub.add_parser("install-autostart", help="Start the service after desktop login")
     start.add_argument("--host", default="127.0.0.1")
     start.add_argument("--port", type=int, default=DEFAULT_PORT)
@@ -286,6 +291,22 @@ def main(argv=None):
             result = core.add_parameter(args.recording, args.block, args.name, mapping) if args.action == "add" else \
                      core.remove_parameter(args.recording, args.name, mapping)
             print(json.dumps(result, indent=2))
+        elif args.command == "script":
+            from . import scripting
+            if args.reset:
+                res = scripting.reset_macro_script(args.name)
+                print(f"Reset {args.name} Python script to default steps.")
+            elif args.save:
+                code = Path(args.save).read_text(encoding="utf-8")
+                res = scripting.save_macro_script(args.name, code)
+                print(f"Saved custom Python script for {args.name} ({len(code.splitlines())} lines).")
+            elif args.export:
+                res = scripting.get_macro_script(args.name)
+                Path(args.export).write_text(res["python_code"], encoding="utf-8")
+                print(f"Exported script for {args.name} to {args.export}")
+            else:
+                res = scripting.get_macro_script(args.name)
+                print(res["python_code"])
         elif args.command == "record":
             if not backend.available():
                 raise RuntimeError("Interactive desktop is unavailable; run input-reply doctor")

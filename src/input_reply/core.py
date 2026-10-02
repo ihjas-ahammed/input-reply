@@ -270,6 +270,12 @@ def write_recording(name: str, data: dict) -> None:
 def delete_recording(name: str) -> str:
     path = safe_path(name)
     path.unlink()
+    py_path = path.with_suffix(".py")
+    if py_path.exists():
+        try:
+            py_path.unlink()
+        except Exception:
+            pass
     with _cache_lock:
         _parsed.pop(path, None)
         _summaries.pop(path, None)
@@ -280,7 +286,10 @@ def _summary(path: Path, signature) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
     validate_recording(data)
     counts = Counter(e["type"] for e in data.get("events", []))
+    py_path = path.with_suffix(".py") if isinstance(path, Path) else None
+    py_exists = bool(data.get("python_code") or (isinstance(py_path, Path) and py_path.is_file()))
     return {"name": path.name, "ai": data.get("format") == FORMAT_AGENT,
+            "has_python": py_exists,
             "steps": len(data.get("steps", [])), "description": str(data.get("description", ""))[:300], "duration": round(float(data.get("duration", 0)), 1),
             "recorded_at": data.get("recorded_at") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(signature[0] / 1e9)),
             "keys": counts["key_down"], "clicks": counts["button_down"],
@@ -390,8 +399,12 @@ def inspect(name: str, mapping: dict[int, str] | None = None) -> dict:
     blocks = typing_blocks(data, mapping)
     params = definitions(data, blocks)
     assigned = {p["block"]: p["name"] for p in params}
+    safe = safe_path(name)
+    py_path = safe.with_suffix(".py") if isinstance(safe, Path) else None
+    py_exists = bool(data.get("python_code") or (isinstance(py_path, Path) and py_path.is_file()))
     return {"name": name, "target": (data.get("target_window") or {}).get("title", "Unknown window"),
             "duration": data.get("duration", 0), "parameters": params, "ai": data.get("format") == FORMAT_AGENT,
+            "has_python": py_exists,
             "blocks": [{k: v for k, v in block.items() if k != "indices"} |
                        {"parameter": assigned.get(block["block"])} for block in blocks]}
 

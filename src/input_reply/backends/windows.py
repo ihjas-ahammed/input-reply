@@ -13,6 +13,22 @@ def _pynput():
     return keyboard, mouse
 
 
+def ensure_input_desktop():
+    """Ensure the calling thread is attached to the active user input desktop."""
+    try:
+        user32 = getattr(ctypes.windll, "user32", None)
+        if user32 and hasattr(user32, "OpenInputDesktop") and hasattr(user32, "SetThreadDesktop"):
+            hdesk = user32.OpenInputDesktop(0, False, 0x01FF)
+            if not hdesk:
+                hdesk = user32.OpenInputDesktop(0, False, 0x0100 | 0x0040 | 0x0001)
+            if hdesk:
+                user32.SetThreadDesktop(hdesk)
+                return True
+    except Exception:
+        pass
+    return False
+
+
 class WindowsBackend:
     name = "windows"
 
@@ -35,14 +51,16 @@ class WindowsBackend:
 
     def _ensure_desktop(self):
         try:
-            if hasattr(self.user32, "OpenInputDesktop") and hasattr(self.user32, "SetThreadDesktop"):
+            if hasattr(self, "user32") and hasattr(self.user32, "OpenInputDesktop") and hasattr(self.user32, "SetThreadDesktop"):
                 hdesk = self.user32.OpenInputDesktop(0, False, 0x01FF)
+                if not hdesk:
+                    hdesk = self.user32.OpenInputDesktop(0, False, 0x0100 | 0x0040 | 0x0001)
                 if hdesk:
                     self.user32.SetThreadDesktop(hdesk)
-                    if hasattr(self.user32, "CloseDesktop"):
-                        self.user32.CloseDesktop(hdesk)
+                    return True
         except Exception:
             pass
+        return ensure_input_desktop()
 
     def available(self):
         try:
@@ -224,6 +242,7 @@ class WindowsBackend:
         return event
 
     def cursor_position(self):
+        self._ensure_desktop()
         try:
             if self.mouse_controller:
                 pos = self.mouse_controller.position
@@ -239,6 +258,7 @@ class WindowsBackend:
         return None
 
     def set_cursor_position(self, x, y):
+        self._ensure_desktop()
         try:
             if self.mouse_controller:
                 self.mouse_controller.position = (int(x), int(y))
@@ -247,7 +267,34 @@ class WindowsBackend:
         except Exception:
             pass
 
+    def window_center(self, ident):
+        if not ident or not str(ident).isdecimal():
+            return None
+        self._ensure_desktop()
+        try:
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+            rect = RECT()
+            hwnd = ctypes.c_void_p(int(ident))
+            if hasattr(self.user32, "GetWindowRect") and self.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                cx = (rect.left + rect.right) // 2
+                cy = (rect.top + rect.bottom) // 2
+                return int(cx), int(cy)
+        except Exception:
+            pass
+        return None
+
+    def center_cursor_on_window(self, ident):
+        self._ensure_desktop()
+        center = self.window_center(ident)
+        if center is not None:
+            self.set_cursor_position(center[0], center[1])
+            return center
+        return None
+
     def record(self, seconds, output, cancel):
+        self._ensure_desktop()
         keyboard, mouse = _pynput()
         events = []
         lock = threading.Lock()
@@ -262,26 +309,25 @@ class WindowsBackend:
         kl_holder = [None]
 
         def win32_event_filter(msg, data):
-            # Prohibit F12 shortcuts in all apps by suppressing F12 keydown/keyup
+            # Prohibit F12 in all apps (e.g. Chrome DevTools) and stop recording immediately
             if getattr(data, "vkCode", None) == 0x7B:  # VK_F12
-                if msg in (0x0100, 0x0104):  # WM_KEYDOWN, WM_SYSKEYDOWN
-                    done.set()
-                if kl_holder[0] is not None:
-                    try:
-                        kl_holder[0].suppress_event()
-                    except Exception:
-                        pass
+                done.set()
+                kl = kl_holder[0]
+                if kl is not None and hasattr(kl, "suppress_event"):
+                    kl.suppress_event()  # Uncaught SuppressException causes hook to return 1 to Windows
             return True
 
         def on_press(key):
-            if key == keyboard.Key.f12:
+            if key == keyboard.Key.f12 or getattr(key, "vk", None) == 0x7B:
                 done.set()
                 return False
             append(self._key_event(key, "key_down", time.monotonic() - start))
 
         def on_release(key):
-            if key != keyboard.Key.f12:
-                append(self._key_event(key, "key_up", time.monotonic() - start))
+            if key == keyboard.Key.f12 or getattr(key, "vk", None) == 0x7B:
+                done.set()
+                return False
+            append(self._key_event(key, "key_up", time.monotonic() - start))
 
         def on_move(x, y):
             nonlocal last_motion
@@ -294,13 +340,30 @@ class WindowsBackend:
             append({"type": "button_down" if pressed else "button_up", "button": button.name,
                     "x": int(x), "y": int(y), "t": round(time.monotonic() - start, 4)})
 
+        class DesktopKeyboardListener(keyboard.Listener):
+            def _run(self):
+                ensure_input_desktop()
+                super()._run()
+
+        class DesktopMouseListener(mouse.Listener):
+            def _run(self):
+                ensure_input_desktop()
+                super()._run()
+
         try:
-            kl = keyboard.Listener(on_press=on_press, on_release=on_release,
-                                   win32_event_filter=win32_event_filter)
+            kl = DesktopKeyboardListener(on_press=on_press, on_release=on_release,
+                                         win32_event_filter=win32_event_filter)
         except Exception:
-            kl = keyboard.Listener(on_press=on_press, on_release=on_release)
+            try:
+                kl = DesktopKeyboardListener(on_press=on_press, on_release=on_release)
+            except Exception:
+                kl = keyboard.Listener(on_press=on_press, on_release=on_release)
         kl_holder[0] = kl
-        ml = mouse.Listener(on_move=on_move, on_click=on_click)
+        try:
+            ml = DesktopMouseListener(on_move=on_move, on_click=on_click)
+        except Exception:
+            ml = mouse.Listener(on_move=on_move, on_click=on_click)
+
         with kl, ml:
             while not done.is_set() and time.monotonic() - start < seconds:
                 if cancel and cancel.wait(0.05):
@@ -315,6 +378,7 @@ class WindowsBackend:
                 "duration": round(min(time.monotonic() - start, seconds), 3), "events": ordered}
 
     def open_player(self):
+        self._ensure_desktop()
         self.keyboard, self.mouse = _pynput()
         self.keyboard_controller = self.keyboard.Controller()
         self.mouse_controller = self.mouse.Controller()
@@ -351,6 +415,7 @@ class WindowsBackend:
                 self.keyboard_controller.release(key)
 
     def type_text(self, value, cancel=None):
+        self._ensure_desktop()
         for char in value:
             if cancel and cancel.is_set():
                 return

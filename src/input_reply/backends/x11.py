@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -70,6 +71,31 @@ class X11Backend:
         if focused["id"] != str(ident):
             raise RuntimeError("Target window did not gain focus")
         return focused
+
+    def window_center(self, ident):
+        if not ident or not str(ident).isdecimal():
+            return None
+        try:
+            output = self.cmd("getwindowgeometry", str(ident))
+            pos_m = re.search(r"Position:\s*(\d+),(\d+)", output)
+            geo_m = re.search(r"Geometry:\s*(\d+)x(\d+)", output)
+            if pos_m and geo_m:
+                x, y = int(pos_m.group(1)), int(pos_m.group(2))
+                w, h = int(geo_m.group(1)), int(geo_m.group(2))
+                return x + w // 2, y + h // 2
+        except Exception:
+            pass
+        return None
+
+    def center_cursor_on_window(self, ident):
+        center = self.window_center(ident)
+        if center is not None:
+            try:
+                self.cmd("mousemove", str(center[0]), str(center[1]))
+            except Exception:
+                pass
+            return center
+        return None
 
     def focus_recorded(self, data, override=None):
         if override:

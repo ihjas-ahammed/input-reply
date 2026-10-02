@@ -24,7 +24,8 @@ LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 GET_ACTIONS = {"/api/status": "status", "/api/recordings": "recordings", "/api/windows": "windows"}
 POST_ACTIONS = {"/api/record": "record", "/api/replay": "replay", "/api/stop": "stop",
                 "/api/delete": "delete", "/api/parameter/add": "parameter_add",
-                "/api/parameter/remove": "parameter_remove"}
+                "/api/parameter/remove": "parameter_remove",
+                "/api/script": "script"}
 
 
 def token_path():
@@ -132,6 +133,9 @@ class Handler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/inspect":
                 name = parse_qs(parsed.query).get("name", [""])[0]
                 self.reply(200, dispatch("inspect", {"name": name}, backend, state))
+            elif parsed.path == "/api/script":
+                name = parse_qs(parsed.query).get("name", [""])[0]
+                self.reply(200, dispatch("script", {"name": name, "op": "get"}, backend, state))
             elif parsed.path == "/api/cloud":
                 service = getattr(self.server, "cloud", None)
                 self.reply(200, service.status() if service else

@@ -1507,6 +1507,13 @@
                 </svg>
                 Replay Macro
               </button>
+              <button type="button" id="edit-python-btn" class="btn btn-secondary" title="View or edit macro as Python script with custom logic">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="16 18 22 12 16 6"></polyline>
+                  <polyline points="8 6 2 12 8 18"></polyline>
+                </svg>
+                Python Logic
+              </button>
               <button type="button" id="delete-btn" class="btn btn-danger-outline" aria-label="Delete selected recording">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <polyline points="3 6 5 6 21 6"></polyline>
@@ -1539,6 +1546,39 @@
       <div class="modal-footer">
         <button type="button" id="delete-modal-cancel-btn" class="btn btn-secondary">Cancel</button>
         <button type="button" id="delete-modal-confirm-btn" class="btn btn-record" style="width: auto;">Permanently Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PYTHON SCRIPT MODAL DIALOG -->
+  <div id="python-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="python-modal-title">
+    <div class="modal-dialog" style="max-width: 840px; width: 95%;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);" aria-hidden="true">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+          <h3 id="python-modal-title" style="margin: 0; font-size: 1.1rem;">Python Macro Logic</h3>
+          <span id="python-status-badge" class="chip" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); background: rgba(56, 189, 248, 0.1);">Generated Steps</span>
+        </div>
+        <button type="button" id="python-modal-close-btn" class="btn btn-secondary btn-icon-only" aria-label="Close Python script editor">×</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <div class="security-banner" style="margin: 0; font-size: 0.8125rem;">
+          <div><strong>Dynamic Python Automation:</strong> Edit steps in Python and add custom conditions (e.g. <code>if params.get("status") == "...":</code>), loops, calculations, or custom timing. When saved, replaying this macro will execute your Python script with real-time cancel (Ctrl+Esc) and speed scaling.</div>
+        </div>
+        <div id="python-error-msg" class="params-error-msg" role="alert" style="display: none;"></div>
+        <div style="position: relative;">
+          <textarea id="python-code-editor" class="input-control" style="font-family: var(--font-mono); font-size: 0.825rem; height: 380px; resize: vertical; line-height: 1.45; white-space: pre; tab-size: 4; width: 100%; box-sizing: border-box;" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+        <button type="button" id="python-reset-btn" class="btn btn-danger-outline btn-sm" title="Discard custom logic and regenerate from original recorded events">Reset to Default Steps</button>
+        <div style="display: flex; gap: 0.6rem;">
+          <button type="button" id="python-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="python-save-btn" class="btn btn-primary" style="width: auto;">Save & Apply Logic</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1679,7 +1719,18 @@
       const replaySpeedInput = document.getElementById('replay-speed');
       const replayPreserveCheckbox = document.getElementById('replay-preserve-keys');
       const replayBtn = document.getElementById('replay-btn');
+      const editPythonBtn = document.getElementById('edit-python-btn');
       const deleteBtn = document.getElementById('delete-btn');
+
+      const pythonModal = document.getElementById('python-modal');
+      const pythonModalTitle = document.getElementById('python-modal-title');
+      const pythonStatusBadge = document.getElementById('python-status-badge');
+      const pythonModalCloseBtn = document.getElementById('python-modal-close-btn');
+      const pythonErrorMsg = document.getElementById('python-error-msg');
+      const pythonCodeEditor = document.getElementById('python-code-editor');
+      const pythonResetBtn = document.getElementById('python-reset-btn');
+      const pythonCancelBtn = document.getElementById('python-cancel-btn');
+      const pythonSaveBtn = document.getElementById('python-save-btn');
 
       const deleteModal = document.getElementById('delete-modal');
       const deleteModalTargetName = document.getElementById('delete-modal-target-name');
@@ -2225,6 +2276,17 @@
           statsRow.appendChild(keysChip);
           statsRow.appendChild(clicksChip);
           statsRow.appendChild(movesChip);
+
+          if (rec.has_python) {
+            const pyChip = document.createElement('span');
+            pyChip.className = 'chip';
+            pyChip.style.color = '#38bdf8';
+            pyChip.style.borderColor = 'rgba(56, 189, 248, 0.3)';
+            pyChip.style.background = 'rgba(56, 189, 248, 0.1)';
+            pyChip.textContent = '🐍 Python Logic';
+            statsRow.appendChild(pyChip);
+          }
+
           content.appendChild(statsRow);
 
           card.appendChild(content);
@@ -2572,6 +2634,7 @@
         if (!selectedRecording) {
           selectedActionsPanel.style.display = 'none';
           replayBtn.disabled = true;
+          editPythonBtn.disabled = true;
           deleteBtn.disabled = true;
           currentInspectedName = null;
           inspectData = null;
@@ -2597,6 +2660,7 @@
         const isBusy = Boolean(currentStatus && currentStatus.busy);
         const isDesktopAvail = Boolean(currentStatus && currentStatus.desktop_available);
         replayBtn.disabled = isBusy || !isDesktopAvail;
+        editPythonBtn.disabled = isBusy;
         deleteBtn.disabled = isBusy;
         updateParamControlStates(isBusy);
       }
@@ -2794,6 +2858,126 @@
           showToast('Failed to delete: ' + err.message, 'error');
         } finally {
           setButtonLoading(deleteModalConfirmBtn, false, 'Permanently Delete');
+        }
+      });
+
+      // Python Logic Modal Handlers
+      function openPythonModal() {
+        if (!selectedRecording) return;
+        pythonModalTitle.textContent = 'Python Macro: ' + selectedRecording.name;
+        pythonErrorMsg.style.display = 'none';
+        pythonErrorMsg.textContent = '';
+        pythonCodeEditor.value = '# Loading Python logic…';
+        pythonCodeEditor.disabled = true;
+        pythonStatusBadge.textContent = 'Loading…';
+        pythonModal.style.display = 'flex';
+
+        apiFetch('/api/script?name=' + encodeURIComponent(selectedRecording.name))
+          .then(function (data) {
+            pythonCodeEditor.disabled = false;
+            pythonCodeEditor.value = data.python_code || '';
+            if (data.custom) {
+              pythonStatusBadge.textContent = '🐍 Custom Logic Active';
+              pythonStatusBadge.style.color = '#38bdf8';
+              pythonStatusBadge.style.borderColor = 'rgba(56, 189, 248, 0.3)';
+              pythonStatusBadge.style.background = 'rgba(56, 189, 248, 0.1)';
+            } else {
+              pythonStatusBadge.textContent = 'Default Generated Steps';
+              pythonStatusBadge.style.color = '#94a3b8';
+              pythonStatusBadge.style.borderColor = 'var(--border)';
+              pythonStatusBadge.style.background = 'var(--surface-subtle)';
+            }
+            pythonCodeEditor.focus();
+          })
+          .catch(function (err) {
+            pythonCodeEditor.disabled = false;
+            pythonErrorMsg.textContent = 'Failed to load script: ' + err.message;
+            pythonErrorMsg.style.display = 'block';
+            pythonStatusBadge.textContent = 'Error';
+          });
+      }
+
+      function closePythonModal() {
+        pythonModal.style.display = 'none';
+      }
+
+      editPythonBtn.addEventListener('click', openPythonModal);
+      pythonModalCloseBtn.addEventListener('click', closePythonModal);
+      pythonCancelBtn.addEventListener('click', closePythonModal);
+      pythonModal.addEventListener('click', function (e) {
+        if (e.target === pythonModal) {
+          closePythonModal();
+        }
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && pythonModal.style.display === 'flex') {
+          closePythonModal();
+        }
+      });
+
+      // Handle Tab in Python Code Editor
+      pythonCodeEditor.addEventListener('keydown', function (e) {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const start = this.selectionStart;
+          const end = this.selectionEnd;
+          this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
+          this.selectionStart = this.selectionEnd = start + 4;
+        }
+      });
+
+      // Save Python Logic
+      pythonSaveBtn.addEventListener('click', async function () {
+        if (!selectedRecording) return;
+        const code = pythonCodeEditor.value;
+        setButtonLoading(pythonSaveBtn, true, 'Saving…');
+        pythonErrorMsg.style.display = 'none';
+        try {
+          const res = await apiFetch('/api/script', {
+            method: 'POST',
+            body: {
+              name: selectedRecording.name,
+              code: code,
+              op: 'save'
+            }
+          });
+          showToast('Python logic saved for ' + selectedRecording.name, 'success');
+          closePythonModal();
+          await loadRecordings();
+        } catch (err) {
+          pythonErrorMsg.textContent = err.message;
+          pythonErrorMsg.style.display = 'block';
+        } finally {
+          setButtonLoading(pythonSaveBtn, false, 'Save & Apply Logic');
+        }
+      });
+
+      // Reset Python Logic to Default Steps
+      pythonResetBtn.addEventListener('click', async function () {
+        if (!selectedRecording) return;
+        if (!confirm('Discard custom Python edits and reset to default generated steps?')) return;
+        setButtonLoading(pythonResetBtn, true, 'Resetting…');
+        pythonErrorMsg.style.display = 'none';
+        try {
+          const res = await apiFetch('/api/script', {
+            method: 'POST',
+            body: {
+              name: selectedRecording.name,
+              op: 'reset'
+            }
+          });
+          pythonCodeEditor.value = res.python_code || '';
+          pythonStatusBadge.textContent = 'Default Generated Steps';
+          pythonStatusBadge.style.color = '#94a3b8';
+          pythonStatusBadge.style.borderColor = 'var(--border)';
+          pythonStatusBadge.style.background = 'var(--surface-subtle)';
+          showToast('Reset ' + selectedRecording.name + ' to default steps.', 'info');
+          await loadRecordings();
+        } catch (err) {
+          pythonErrorMsg.textContent = err.message;
+          pythonErrorMsg.style.display = 'block';
+        } finally {
+          setButtonLoading(pythonResetBtn, false, 'Reset to Default Steps');
         }
       });
 
