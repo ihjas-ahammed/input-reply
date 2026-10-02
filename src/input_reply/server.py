@@ -122,7 +122,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             state, backend = self.server.state, self.server.backend
-            if parsed.path in GET_ACTIONS:
+            if parsed.path == "/api/desktop-process":
+                if self.client_address[0] not in LOOPBACK:
+                    self.reply(403, {"error": "Desktop activation is local only"})
+                    return
+                self.reply(200, {"pid": os.getpid()})
+            elif parsed.path in GET_ACTIONS:
                 self.reply(200, dispatch(GET_ACTIONS[parsed.path], {}, backend, state))
             elif parsed.path == "/api/inspect":
                 name = parse_qs(parsed.query).get("name", [""])[0]

@@ -8,6 +8,7 @@ what starts at login. ``window`` shows the dashboard in a native window
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import subprocess
@@ -122,6 +123,31 @@ def run_service(host: str = "127.0.0.1", port: int = DEFAULT_PORT, tray: bool = 
         server.server_close()
 
 
+class DesktopBridge:
+    """Let a user click in the foreground UI authorize service activation."""
+
+    def __init__(self, port):
+        self._port = port
+
+    def allow_focus(self):
+        if os.name != "nt":
+            return False
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self._port}/api/desktop-process",
+            headers={"Authorization": f"Bearer {access_token()}"})
+        try:
+            with urllib.request.urlopen(request, timeout=2) as response:
+                pid = json.load(response)["pid"]
+            if not isinstance(pid, int) or not 0 < pid < 0xFFFFFFFF:
+                return False
+            allow = ctypes.windll.user32.AllowSetForegroundWindow
+            allow.argtypes = [ctypes.c_uint32]
+            allow.restype = ctypes.c_int
+            return bool(allow(pid))
+        except (OSError, ValueError, KeyError):
+            return False
+
+
 def run_window(port: int = DEFAULT_PORT):
     url = f"http://127.0.0.1:{port}/#token={access_token()}"   # fragment stays in the client; the page removes it
     try:
@@ -130,7 +156,8 @@ def run_window(port: int = DEFAULT_PORT):
         print("pywebview is not installed (pip install 'input-reply[desktop]'); opening your browser instead.")
         webbrowser.open(url)
         return
-    webview.create_window("Input Reply", url, width=1200, height=820, min_size=(420, 560))
+    webview.create_window("Input Reply", url, width=1200, height=820, min_size=(420, 560),
+                          js_api=DesktopBridge(port))
     webview.start()
 
 

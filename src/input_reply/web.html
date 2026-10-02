@@ -1757,6 +1757,10 @@
 
         let res;
         try {
+          if ((path === '/api/record' || path === '/api/replay') &&
+              window.pywebview && window.pywebview.api && window.pywebview.api.allow_focus) {
+            await window.pywebview.api.allow_focus();
+          }
           res = await fetch(path, Object.assign({}, options, { headers: headers }));
         } catch (netErr) {
           throw new Error('Unable to connect to server. Check your network or verify the server is running.');

@@ -12,6 +12,7 @@ from datetime import datetime
 
 from . import core, macros
 from .actuator import Actuator
+from .backends.windows import WindowsBackend
 
 
 def seconds(value, maximum=300):
@@ -50,12 +51,19 @@ def check_backend(data, backend):
         raise RuntimeError(f"Recording uses {saved}; this desktop uses {backend.name}")
 
 
-def record_once(backend, name, duration, countdown, window_id=None, cancel=None, on_started=None):
+def record_once(backend, name, duration, countdown, window_id=None, cancel=None, on_started=None, on_focusing=None):
     if not wait_countdown(countdown, cancel):
+        return None
+    if window_id is not None and on_focusing:
+        on_focusing()
+    if window_id is not None and isinstance(backend, WindowsBackend):
+        target = backend.focus(window_id, cancel=cancel)
+    else:
+        target = backend.focus(window_id) if window_id is not None else backend.active_window()
+    if target is None or (cancel and cancel.is_set()):
         return None
     if on_started:
         on_started()
-    target = backend.focus(window_id) if window_id is not None else backend.active_window()
     path = core.safe_path(name)
     data = backend.record(duration, path, cancel)
     data["target_window"] = target
@@ -65,7 +73,7 @@ def record_once(backend, name, duration, countdown, window_id=None, cancel=None,
     return data
 
 
-def replay_once(backend, name, values, countdown, window_id=None, preserve=False, cancel=None, on_started=None):
+def replay_once(backend, name, values, countdown, window_id=None, preserve=False, cancel=None, on_started=None, on_focusing=None):
     data = core.read_recording(name)
     if data.get("format") == core.FORMAT_AGENT:
         macros.resolve(data, values)
@@ -82,9 +90,16 @@ def replay_once(backend, name, values, countdown, window_id=None, preserve=False
                   if event["type"].startswith("key_") else event for event in events]
     if not wait_countdown(countdown, cancel):
         return None, False
+    if on_focusing:
+        on_focusing()
+    if isinstance(backend, WindowsBackend):
+        target = backend.focus_recorded(data, window_id, cancel=cancel)
+    else:
+        target = backend.focus_recorded(data, window_id)
+    if target is None or (cancel and cancel.is_set()):
+        return None, False
     if on_started:
         on_started()
-    target = backend.focus_recorded(data, window_id)
     backend.open_player()
     try:
         success = core.play(events, backend, cancel, preserve)
@@ -172,6 +187,8 @@ class MacroState:
         try:
             if kind == "record":
                 data = record_once(self.backend, name, duration, countdown, window_id, self.cancel,
+                                   on_focusing=lambda: self._set(phase="focusing",
+                                       message="Activating target window. If it stays in the background, click it now (up to 15 seconds)."),
                                    on_started=lambda: self._set(phase="recording",
                                        message=f"Recording {name}. Press F12 or Stop to finish."))
                 if data is None:
@@ -181,6 +198,8 @@ class MacroState:
             else:
                 target, completed = replay_once(self.backend, name, values, countdown,
                                                 window_id, preserve, self.cancel,
+                                                on_focusing=lambda: self._set(phase="focusing",
+                                                    message="Activating target window. If it stays in the background, click it now (up to 15 seconds)."),
                                                 on_started=lambda: self._set(phase="replaying", message=f"Replaying {name}"))
                 if completed:
                     self._set(phase="done", busy=False, message=f"Replayed {name} in {target['title']}")

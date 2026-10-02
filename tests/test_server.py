@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import threading
 import time
@@ -130,6 +131,18 @@ class ServerTests(unittest.TestCase):
         for _ in range(5):
             self.request("/api/status")
         self.assertEqual(len(calls), 1)
+
+    def test_desktop_process_requires_local_authenticated_request(self):
+        status, data = self.request("/api/desktop-process")
+        self.assertEqual(status, 200)
+        self.assertEqual(data, {"pid": os.getpid()})
+        with patch.object(server, "LOOPBACK", set()):
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.request("/api/desktop-process")
+            self.assertEqual(error.exception.code, 403)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.httpd.server_port}/api/desktop-process")
+        self.assertEqual(error.exception.code, 401)
 
     def test_cloud_status_without_service_is_disabled(self):
         status, data = self.request("/api/cloud")

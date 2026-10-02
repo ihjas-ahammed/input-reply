@@ -28,6 +28,9 @@ class WindowsBackend:
         self.user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
         self.user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
         self.user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.user32.ShowWindowAsync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.user32.IsWindow.argtypes = [ctypes.c_void_p]
+        self.user32.IsIconic.argtypes = [ctypes.c_void_p]
 
     def available(self):
         try:
@@ -64,33 +67,50 @@ class WindowsBackend:
         self.user32.EnumWindows(collect, None)
         return result
 
-    def focus(self, ident):
+    def focus(self, ident, timeout=15.0, cancel=None):
         if not str(ident).isdecimal() or int(ident) <= 0:
             raise ValueError("Invalid window ID")
         hwnd = ctypes.c_void_p(int(ident))
-        self.user32.ShowWindow(hwnd, 9)
+        if not self.user32.IsWindow(hwnd):
+            raise RuntimeError("The selected window has closed. Refresh the window list and choose it again.")
+        if self.user32.GetForegroundWindow() == int(ident):
+            return self.active_window()
+        if self.user32.IsIconic(hwnd):
+            self.user32.ShowWindowAsync(hwnd, 9)
         self.user32.SetForegroundWindow(hwnd)
-        time.sleep(0.1)
-        focused = self.active_window()
-        if focused["id"] != str(ident):
-            raise RuntimeError("Windows did not grant focus to the target. Focus it manually and retry.")
-        return focused
+        # Activation is asynchronous and Windows may refuse it. Allow the user
+        # to activate the target without capturing that click or sending input
+        # elsewhere. Do not repeatedly steal focus while waiting.
+        deadline = time.monotonic() + timeout
+        while True:
+            if self.user32.GetForegroundWindow() == int(ident):
+                return self.active_window()
+            if not self.user32.IsWindow(hwnd):
+                raise RuntimeError("The selected window has closed. Refresh the window list and choose it again.")
+            if cancel is not None and cancel.is_set():
+                return None
+            if time.monotonic() >= deadline:
+                raise RuntimeError("The target window was not activated. Retry and click the selected window during the countdown or the focus wait.")
+            if cancel is not None:
+                cancel.wait(0.1)
+            else:
+                time.sleep(0.1)
 
-    def focus_recorded(self, data, override=None):
+    def focus_recorded(self, data, override=None, cancel=None):
         if override:
-            return self.focus(override)
+            return self.focus(override, cancel=cancel)
         target = data.get("target_window") or {}
         ident, title = target.get("id"), target.get("title")
         if ident:
             try:
-                if not title or self._title(ident) == title:
-                    return self.focus(ident)
-            except (ValueError, RuntimeError, OSError):
+                if self.user32.IsWindow(ctypes.c_void_p(int(ident))) and (not title or self._title(ident) == title):
+                    return self.focus(ident, cancel=cancel)
+            except (ValueError, OSError):
                 pass
         if title:
             for window in self.windows():
                 if window["title"] == title:
-                    return self.focus(window["id"])
+                    return self.focus(window["id"], cancel=cancel)
         raise RuntimeError("Recorded window is closed. Choose another open window.")
 
     @staticmethod
