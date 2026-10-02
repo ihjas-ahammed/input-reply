@@ -83,6 +83,7 @@ Write-Host "`n[6/8] Deploying AI agent skills (Codex, Claude, AGY)..." -Foregrou
 $skillSrc = Join-Path $here "skills\input-reply\SKILL.md"
 if (Test-Path $skillSrc) {
     $skillTargets = @(
+        (Join-Path $here ".agents\skills\input-reply"),
         (Join-Path $here ".agent\skills\input-reply"),
         (Join-Path $here ".claude\skills\input-reply"),
         (Join-Path $env:USERPROFILE ".gemini\config\skills\input-reply"),

@@ -1,6 +1,12 @@
 ---
 name: input-reply
-description: Desktop automation macro creator and runner. Use this skill to create, edit, and replay desktop macros. Supports: (1) Creating macros via 1-command CLI or script, (2) Asking the user to record interactively, (3) Driving the UI autonomously via screenshots and human-like smooth mouse movements, (4) Dynamic Python scripting with parameters, conditionals, and loops, and (5) Replaying any saved macro or .py file.
+description: >-
+  Desktop automation macro creator and runner. Use this skill to create, edit,
+  and replay desktop macros. Supports creating macros via 1-command CLI or script,
+  asking the user to record interactively, driving the UI autonomously via screenshots
+  and human-like smooth mouse movements, dynamic Python scripting with parameters,
+  conditionals, and loops, and replaying any saved macro or .py file.
+trigger: /input-reply
 ---
 
 # Input Reply Skill

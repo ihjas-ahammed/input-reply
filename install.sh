@@ -62,7 +62,8 @@ echo "  Created desktop launcher and symlinks in $bin."
 echo "\n[6/8] Deploying AI agent skills (Codex, Claude, AGY)..."
 skill_src="$here/skills/input-reply/SKILL.md"
 if [ -f "$skill_src" ]; then
-    for target in "$here/.agent/skills/input-reply" \
+    for target in "$here/.agents/skills/input-reply" \
+                  "$here/.agent/skills/input-reply" \
                   "$here/.claude/skills/input-reply" \
                   "$HOME/.gemini/config/skills/input-reply" \
                   "$data/skills/input-reply"; do
