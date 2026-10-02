@@ -106,6 +106,23 @@ class ServerTests(unittest.TestCase):
                                                                   "parameter": "friend"})
         self.assertEqual(changed["parameters"], [])
 
+    def test_replay_with_repeat_and_speed(self):
+        status, _ = self.request("/api/replay", {
+            "name": "demo.json",
+            "countdown": 0,
+            "repeat": 2,
+            "speed": 5.0
+        })
+        self.assertEqual(status, 202)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            job = self.request("/api/status")[1]
+            if not job["busy"]:
+                break
+            time.sleep(0.02)
+        self.assertEqual(job["phase"], "done")
+        self.assertIn("2 times", job["message"])
+
     def test_health_is_public_and_connections_are_reused(self):
         import http.client
         conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_port, timeout=5)

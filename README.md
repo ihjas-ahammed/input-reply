@@ -67,6 +67,15 @@ The quickest install gives you the desktop app, registers it to start at login, 
 ```sh
 ./install.sh          # Linux
 .\install.ps1         # Windows PowerShell
+install.bat           # Windows Command Prompt / Double-click
+```
+
+To update an existing installation to the latest version:
+
+```sh
+./update.sh           # Linux
+.\update.ps1          # Windows PowerShell
+update.bat            # Windows Command Prompt / Double-click
 ```
 
 Or, from a virtual environment, `python -m pip install ".[desktop]"` then `input-reply setup`. On Linux the native window needs a system WebKit (`python3-gi` with `gir1.2-webkit2-4.1`, or Qt); without it the same dashboard opens in your browser.

@@ -1458,15 +1458,37 @@
             <div class="form-row-2">
               <div class="form-group">
                 <label for="replay-target-override">Target Window</label>
-                <select id="replay-target-override" class="select-control">
-                  <option value="">Default: Use recorded window</option>
-                </select>
-                <span class="form-help">Use the saved target, or choose an open window for older recordings.</span>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                  <select id="replay-target-override" class="select-control" style="flex: 1;">
+                    <option value="">Default: Use recorded window</option>
+                  </select>
+                  <button type="button" id="refresh-replay-windows-btn" class="btn btn-secondary btn-icon-only" title="Refresh visible open windows">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M23 4v6h-6"></path>
+                      <path d="M1 20v-6h6"></path>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                  </button>
+                </div>
+                <span class="form-help">Use saved target or pick another open window. If closed, another open window is used automatically.</span>
               </div>
               <div class="form-group">
                 <label for="replay-countdown">Replay Countdown (sec)</label>
                 <input type="number" id="replay-countdown" class="input-control" min="0" max="30" step="1" value="3">
                 <span class="form-help">0 to 30 seconds lead time</span>
+              </div>
+            </div>
+
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="replay-repeat">Repeat Count</label>
+                <input type="number" id="replay-repeat" class="input-control" min="1" max="10000" step="1" value="1">
+                <span class="form-help">Times to run the macro (returns to initial screen state between repeats)</span>
+              </div>
+              <div class="form-group">
+                <label for="replay-speed">Playback Speed</label>
+                <input type="number" id="replay-speed" class="input-control" min="0.1" max="10" step="0.1" value="1.0">
+                <span class="form-help">Speed multiplier (1.0 = normal, 2.0 = 2x, 0.5 = half speed)</span>
               </div>
             </div>
 
@@ -1493,6 +1515,7 @@
                 Delete
               </button>
             </div>
+            <span class="form-help" style="display: block; margin-top: 0.5rem; text-align: center;">Press <kbd style="padding: 0.15rem 0.4rem; background: var(--surface-subtle); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.75rem;">Ctrl+Esc</kbd> anytime to stop running macros (all repetitions).</span>
           </div>
         </div>
       </section>
@@ -1652,6 +1675,8 @@
       const replayValuesContainer = document.getElementById('replay-values-container');
       const replayOverrideSelect = document.getElementById('replay-target-override');
       const replayCountdownInput = document.getElementById('replay-countdown');
+      const replayRepeatInput = document.getElementById('replay-repeat');
+      const replaySpeedInput = document.getElementById('replay-speed');
       const replayPreserveCheckbox = document.getElementById('replay-preserve-keys');
       const replayBtn = document.getElementById('replay-btn');
       const deleteBtn = document.getElementById('delete-btn');
@@ -2001,8 +2026,17 @@
 
         const defaultOption = document.createElement('option');
         defaultOption.value = '';
-        if (selectedRecording && selectedRecording.target && selectedRecording.target !== 'Unknown window') {
-          defaultOption.textContent = 'Default: Use saved target ("' + selectedRecording.target + '")';
+        const savedTarget = selectedRecording && selectedRecording.target && selectedRecording.target !== 'Unknown window' ? selectedRecording.target : null;
+        const isTargetOpen = savedTarget ? windowsList.some(function (w) { return w.title === savedTarget; }) : false;
+
+        if (savedTarget) {
+          if (isTargetOpen) {
+            defaultOption.textContent = 'Default: Use saved target ("' + savedTarget + '")';
+          } else if (windowsList.length > 0) {
+            defaultOption.textContent = 'Saved target closed — Auto-fallback to open window';
+          } else {
+            defaultOption.textContent = 'Default: Use saved target ("' + savedTarget + '")';
+          }
         } else if (selectedRecording) {
           defaultOption.textContent = 'Choose a target window for this older recording';
         } else {
@@ -2014,7 +2048,7 @@
         windowsList.forEach(function (win) {
           const opt = document.createElement('option');
           opt.value = String(win.id);
-          opt.textContent = 'Override: ' + String(win.title) + ' [ID: ' + win.id + ']';
+          opt.textContent = (savedTarget && win.title === savedTarget ? 'Saved target: ' : 'Open window: ') + String(win.title) + ' [ID: ' + win.id + ']';
           if (String(win.id) === String(savedVal)) {
             opt.selected = true;
             preserved = true;
@@ -2550,6 +2584,7 @@
         selectedRecNameEl.textContent = String(selectedRecording.name);
 
         renderReplayOverrideSelect();
+        loadWindows();
 
         if (currentInspectedName !== selectedRecording.name) {
           currentInspectedName = selectedRecording.name;
@@ -2637,6 +2672,20 @@
         }
         const preserveKeys = Boolean(replayPreserveCheckbox.checked);
 
+        const repeatVal = parseInt(replayRepeatInput.value, 10);
+        if (isNaN(repeatVal) || repeatVal < 1 || repeatVal > 10000) {
+          showToast('Repeat count must be a whole number between 1 and 10000.', 'error');
+          replayRepeatInput.focus();
+          return;
+        }
+
+        const speedVal = parseFloat(replaySpeedInput.value);
+        if (isNaN(speedVal) || speedVal < 0.1 || speedVal > 50) {
+          showToast('Playback speed must be a number between 0.1 and 50.', 'error');
+          replaySpeedInput.focus();
+          return;
+        }
+
         // Gather parameter values for replay
         const params = {};
         if (inspectData && Array.isArray(inspectData.parameters)) {
@@ -2658,7 +2707,9 @@
               countdown: countdown,
               window_id: windowId,
               preserve_key_holds: preserveKeys,
-              params: params
+              params: params,
+              repeat: repeatVal,
+              speed: speedVal
             }
           });
           showToast('Replay initiated for ' + selectedRecording.name, 'success');
@@ -2750,6 +2801,13 @@
       refreshWindowsBtn.addEventListener('click', function () {
         loadWindows();
       });
+
+      const refreshReplayWindowsBtn = document.getElementById('refresh-replay-windows-btn');
+      if (refreshReplayWindowsBtn) {
+        refreshReplayWindowsBtn.addEventListener('click', function () {
+          loadWindows();
+        });
+      }
 
       refreshRecordingsBtn.addEventListener('click', function () {
         loadRecordings();

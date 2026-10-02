@@ -25,21 +25,30 @@ def resolve(data: dict, values: dict) -> list[dict]:
             for step in data["steps"]]
 
 
-def play(data: dict, values: dict, actuator, cancel: threading.Event | None = None) -> bool:
+def play(data: dict, values: dict, actuator, cancel: threading.Event | None = None, speed: float = 1.0) -> bool:
     steps = resolve(data, values)
+    rate = float(speed) if speed and float(speed) > 0 else 1.0
+    pause = max(0.02, PAUSE / rate)
     with actuator.session():
         actuator.set_scale(data.get("screen"), actuator.screen_size())
         try:
             for step in steps:
                 if cancel and cancel.is_set():
                     return False
-                actuator.perform(step, cancel)
-                if step["type"] != "wait":
+                if step["type"] == "wait":
+                    wait_time = max(0.0, step.get("seconds", 0) / rate)
                     if cancel:
-                        if cancel.wait(PAUSE):
+                        if cancel.wait(wait_time):
                             return False
                     else:
-                        time.sleep(PAUSE)
+                        time.sleep(wait_time)
+                else:
+                    actuator.perform(step, cancel)
+                    if cancel:
+                        if cancel.wait(pause):
+                            return False
+                    else:
+                        time.sleep(pause)
             return not (cancel and cancel.is_set())
         finally:
             actuator.set_scale(None, None)

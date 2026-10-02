@@ -68,6 +68,33 @@ class WindowsFocusTests(unittest.TestCase):
         backend.focus.assert_called_once()
         backend.windows.assert_not_called()
 
+    def test_recorded_window_closed_falls_back_to_similar_title(self):
+        backend = self.backend([7])
+        backend.user32.IsWindow.return_value = False
+        backend.windows = Mock(return_value=[{"id": "99", "title": "Untitled - Notepad"}])
+        backend.focus = Mock(return_value={"id": "99", "title": "Untitled - Notepad"})
+        result = backend.focus_recorded({"target_window": {"id": "42", "title": "notes.txt - Notepad"}})
+        self.assertEqual(result["id"], "99")
+        backend.focus.assert_called_once_with("99", cancel=None)
+
+    def test_recorded_window_closed_falls_back_to_another_open_window(self):
+        backend = self.backend([7])
+        backend.user32.IsWindow.return_value = False
+        backend.active_window = Mock(return_value={"id": "1", "title": "Input Reply"})
+        backend.windows = Mock(return_value=[{"id": "101", "title": "Calculator"}])
+        backend.focus = Mock(return_value={"id": "101", "title": "Calculator"})
+        result = backend.focus_recorded({"target_window": {"id": "42", "title": "Completely Gone Window"}})
+        self.assertEqual(result["id"], "101")
+        backend.focus.assert_called_once_with("101", cancel=None)
+
+    def test_recorded_window_closed_and_no_windows_raises_error(self):
+        backend = self.backend([7])
+        backend.user32.IsWindow.return_value = False
+        backend.windows = Mock(return_value=[])
+        backend.active_window = Mock(return_value={"id": "1", "title": "Input Reply"})
+        with self.assertRaisesRegex(RuntimeError, "no other open desktop windows were found"):
+            backend.focus_recorded({"target_window": {"id": "42", "title": "Gone Window"}})
+
 
 if __name__ == "__main__":
     unittest.main()

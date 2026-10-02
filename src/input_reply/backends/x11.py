@@ -82,11 +82,43 @@ class X11Backend:
                     return self.focus(ident)
             except (RuntimeError, OSError, subprocess.SubprocessError):
                 pass
+        open_wins = self.windows()
         if title:
-            for window in self.windows():
+            # 1. Exact title match
+            for window in open_wins:
                 if window["title"] == title:
                     return self.focus(window["id"])
-        raise RuntimeError("Recorded window is closed. Choose another open window.")
+            # 2. Similar title or application name match
+            delimiters = [" - ", " — ", " | ", " · "]
+            segments = []
+            for d in delimiters:
+                if d in title:
+                    segments.extend([s.strip() for s in title.split(d) if len(s.strip()) >= 3])
+            for seg in segments:
+                for window in open_wins:
+                    if seg.lower() in window["title"].lower() and not window["title"].startswith("Input Reply"):
+                        try:
+                            return self.focus(window["id"])
+                        except (RuntimeError, ValueError):
+                            pass
+
+        # 3. Fall back to currently active desktop window if not Input Reply
+        try:
+            active = self.active_window()
+            if active and not active["title"].startswith("Input Reply") and active.get("id") and str(active["id"]) != "0":
+                return active
+        except Exception:
+            pass
+
+        # 4. Open/focus another available desktop window
+        candidates = [w for w in open_wins if not w["title"].startswith("Input Reply") and w.get("id")]
+        for window in candidates:
+            try:
+                return self.focus(window["id"])
+            except (RuntimeError, ValueError):
+                pass
+
+        raise RuntimeError("Recorded window is closed and no other open desktop windows were found. Open a window and retry.")
 
     def record(self, seconds, output, cancel):
         command = [sys.executable, "-m", "input_reply.backends.x11_engine", "record",

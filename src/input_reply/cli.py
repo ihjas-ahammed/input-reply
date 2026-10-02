@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 from . import autostart, core, settings
-from .actions import mapping_for, record_once, replay_once, seconds
+from .actions import mapping_for, record_once, replay_once, repeat_count, seconds, speed_factor
 from .backends import select_backend
 from .desktop import DEFAULT_PORT, open_app, probe, run_service, run_window
 from .firebase import CloudError, Session, load_config
@@ -125,7 +125,8 @@ def _remote(args):
     if action == "list":
         action = "recordings"
     elif action == "run":
-        action, payload = "replay", {"name": args.name, "params": _values(args), "countdown": args.countdown}
+        action, payload = "replay", {"name": args.name, "params": _values(args), "countdown": args.countdown,
+                                     "repeat": args.repeat, "speed": args.speed}
         if args.window_id:
             payload["window_id"] = args.window_id
     elif action == "record":
@@ -183,6 +184,8 @@ def main(argv=None):
             item.add_argument("--params-stdin", action="store_true")
             item.add_argument("--countdown", type=float, default=3)
             item.add_argument("--window-id")
+            item.add_argument("--repeat", type=int, default=1)
+            item.add_argument("--speed", type=float, default=1.0)
     sub.add_parser("token", help="Print the web access code")
     sub.add_parser("doctor", help="Check the desktop backend")
     windows = sub.add_parser("windows", help="List desktop windows")
@@ -214,6 +217,8 @@ def main(argv=None):
     run.add_argument("--countdown", type=float, default=3)
     run.add_argument("--window-id")
     run.add_argument("--preserve-key-holds", action="store_true")
+    run.add_argument("--repeat", type=int, default=1, help="Number of times to repeat the macro")
+    run.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier (e.g. 1.5, 2.0)")
     run.add_argument("--json", action="store_true")
     start = sub.add_parser("install-autostart", help="Start the service after desktop login")
     start.add_argument("--host", default="127.0.0.1")
@@ -298,16 +303,21 @@ def main(argv=None):
             if not backend.available():
                 raise RuntimeError("Interactive desktop is unavailable; run input-reply doctor")
             values = _values(args)
+            repeat = repeat_count(args.repeat)
+            speed = speed_factor(args.speed)
             cancel, prior = _cancel_on_sigint()
             try:
                 target, completed = replay_once(backend, args.name, values,
                                                 seconds(args.countdown, 30), args.window_id,
-                                                args.preserve_key_holds, cancel)
+                                                args.preserve_key_holds, cancel,
+                                                speed=speed, repeat=repeat)
             finally:
                 _restore_sigint(prior)
             result = {"recording": args.name, "target": target["title"] if target else None,
-                      "completed": completed, "parameters_overridden": sorted(values)}
+                      "completed": completed, "parameters_overridden": sorted(values),
+                      "repeat": repeat, "speed": speed}
             print(json.dumps(result) if args.json else
+                  f"Replayed {args.name} ({repeat} times) in {target['title']}" if completed and repeat > 1 else
                   f"Replayed {args.name} in {target['title']}" if completed else "Cancelled")
 
 

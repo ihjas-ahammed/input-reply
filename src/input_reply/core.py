@@ -502,15 +502,16 @@ def normalize_repeats(events: list[dict], preserve=False) -> list[dict]:
     return output
 
 
-def play(events: list[dict], backend, cancel: Event | None = None, preserve=False) -> bool:
+def play(events: list[dict], backend, cancel: Event | None = None, preserve=False, speed: float = 1.0) -> bool:
     events = normalize_repeats(events, preserve)
     held_keys, held_buttons = {}, {}
     started = time.monotonic()
+    rate = float(speed) if speed and float(speed) > 0 else 1.0
     try:
         for event in events:
             if cancel and cancel.is_set():
                 return False
-            delay = started + event["t"] - time.monotonic()
+            delay = started + (event["t"] / rate) - time.monotonic()
             if delay > 0:
                 if cancel:
                     if cancel.wait(delay):

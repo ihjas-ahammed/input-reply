@@ -59,12 +59,31 @@ class WindowsBackend:
         def collect(hwnd, unused):
             if self.user32.IsWindowVisible(hwnd):
                 title = self._title(hwnd)
-                if title != "Untitled window":
+                if title != "Untitled window" and title not in {"Program Manager", "Windows Input Experience"}:
                     result.append({"id": str(hwnd), "title": title})
             return True
 
-        self.user32.EnumWindows.argtypes = [callback_type, ctypes.c_void_p]
-        self.user32.EnumWindows(collect, None)
+        hdesk = None
+        try:
+            if hasattr(self.user32, "OpenInputDesktop"):
+                hdesk = self.user32.OpenInputDesktop(0, False, 0x0100)  # DESKTOP_ENUMERATE
+            if hdesk and hasattr(self.user32, "EnumDesktopWindows"):
+                self.user32.EnumDesktopWindows(hdesk, collect, 0)
+        except Exception:
+            pass
+        finally:
+            if hdesk and hasattr(self.user32, "CloseDesktop"):
+                try:
+                    self.user32.CloseDesktop(hdesk)
+                except Exception:
+                    pass
+
+        if not result and hasattr(self.user32, "EnumWindows"):
+            try:
+                self.user32.EnumWindows.argtypes = [callback_type, ctypes.c_void_p]
+                self.user32.EnumWindows(collect, None)
+            except Exception:
+                pass
         return result
 
     def focus(self, ident, timeout=15.0, cancel=None):
@@ -107,11 +126,43 @@ class WindowsBackend:
                     return self.focus(ident, cancel=cancel)
             except (ValueError, OSError):
                 pass
+        open_wins = self.windows()
         if title:
-            for window in self.windows():
+            # 1. Exact title match
+            for window in open_wins:
                 if window["title"] == title:
                     return self.focus(window["id"], cancel=cancel)
-        raise RuntimeError("Recorded window is closed. Choose another open window.")
+            # 2. Similar title or application name match (e.g. "Notepad" or "Google Chrome")
+            delimiters = [" - ", " — ", " | ", " · "]
+            segments = []
+            for d in delimiters:
+                if d in title:
+                    segments.extend([s.strip() for s in title.split(d) if len(s.strip()) >= 3])
+            for seg in segments:
+                for window in open_wins:
+                    if seg.lower() in window["title"].lower() and not window["title"].startswith("Input Reply"):
+                        try:
+                            return self.focus(window["id"], cancel=cancel)
+                        except (RuntimeError, ValueError):
+                            pass
+
+        # 3. Fall back to currently active desktop window if not Input Reply
+        try:
+            active = self.active_window()
+            if active and not active["title"].startswith("Input Reply") and active.get("id") and str(active["id"]) != "0":
+                return active
+        except Exception:
+            pass
+
+        # 4. Open/focus another available desktop window
+        candidates = [w for w in open_wins if not w["title"].startswith("Input Reply") and w.get("id")]
+        for window in candidates:
+            try:
+                return self.focus(window["id"], cancel=cancel)
+            except (RuntimeError, ValueError):
+                pass
+
+        raise RuntimeError("Recorded window is closed and no other open desktop windows were found. Open a window and retry.")
 
     @staticmethod
     def _key_event(key, kind, at):
@@ -125,6 +176,30 @@ class WindowsBackend:
             event["vk"] = vk
         return event
 
+    def cursor_position(self):
+        try:
+            if self.mouse_controller:
+                pos = self.mouse_controller.position
+                if pos is not None:
+                    return int(pos[0]), int(pos[1])
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+            pt = POINT()
+            if self.user32.GetCursorPos(ctypes.byref(pt)):
+                return int(pt.x), int(pt.y)
+        except Exception:
+            pass
+        return None
+
+    def set_cursor_position(self, x, y):
+        try:
+            if self.mouse_controller:
+                self.mouse_controller.position = (int(x), int(y))
+            else:
+                self.user32.SetCursorPos(int(x), int(y))
+        except Exception:
+            pass
+
     def record(self, seconds, output, cancel):
         keyboard, mouse = _pynput()
         events = []
@@ -136,6 +211,20 @@ class WindowsBackend:
         def append(event):
             with lock:
                 events.append(event)
+
+        kl_holder = [None]
+
+        def win32_event_filter(msg, data):
+            # Prohibit F12 shortcuts in all apps by suppressing F12 keydown/keyup
+            if getattr(data, "vkCode", None) == 0x7B:  # VK_F12
+                if msg in (0x0100, 0x0104):  # WM_KEYDOWN, WM_SYSKEYDOWN
+                    done.set()
+                if kl_holder[0] is not None:
+                    try:
+                        kl_holder[0].suppress_event()
+                    except Exception:
+                        pass
+            return True
 
         def on_press(key):
             if key == keyboard.Key.f12:
@@ -158,8 +247,14 @@ class WindowsBackend:
             append({"type": "button_down" if pressed else "button_up", "button": button.name,
                     "x": int(x), "y": int(y), "t": round(time.monotonic() - start, 4)})
 
-        with keyboard.Listener(on_press=on_press, on_release=on_release) as kl, \
-             mouse.Listener(on_move=on_move, on_click=on_click) as ml:
+        try:
+            kl = keyboard.Listener(on_press=on_press, on_release=on_release,
+                                   win32_event_filter=win32_event_filter)
+        except Exception:
+            kl = keyboard.Listener(on_press=on_press, on_release=on_release)
+        kl_holder[0] = kl
+        ml = mouse.Listener(on_move=on_move, on_click=on_click)
+        with kl, ml:
             while not done.is_set() and time.monotonic() - start < seconds:
                 if cancel and cancel.wait(0.05):
                     break
