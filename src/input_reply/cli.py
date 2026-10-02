@@ -256,10 +256,12 @@ def main(argv=None):
     tt.add_argument("--human", action="store_true", help="Use human-like keystroke intervals")
 
     create = sub.add_parser("create", help="Create a new macro from script or template")
-    create.add_argument("name", help="Macro name (e.g. macro.json)")
+    create.add_argument("name", help="Macro name (e.g. macro or macro.json)")
+    create.add_argument("--code", help="Inline Python code string for the macro")
+    create.add_argument("--code-file", help="Python code file to populate")
     create.add_argument("--window-id", help="Target window ID")
     create.add_argument("--title", help="Target window title")
-    create.add_argument("--code-file", help="Python code file to populate")
+    create.add_argument("--overwrite", action="store_true", help="Overwrite existing macro with the same name")
 
     args = parser.parse_args(argv)
     args.command = args.command or "app"
@@ -420,7 +422,8 @@ def main(argv=None):
             print(f"Typed text: {preview}")
         elif args.command == "create":
             from . import scripting
-            name = core.new_name(args.name)
+            clean_name = core.normalize_name(args.name)
+            name = clean_name if args.overwrite else core.new_name(clean_name)
             target = {"id": args.window_id or "0", "title": args.title or "Desktop Window"}
             data = {
                 "format": "input-reply-v1",
@@ -430,15 +433,23 @@ def main(argv=None):
                 "target_window": target,
                 "recorded_at": datetime.now().astimezone().isoformat(timespec="seconds")
             }
-            if args.code_file:
+            code = None
+            if args.code:
+                code = args.code
+            elif args.code_file:
                 code = Path(args.code_file).read_text(encoding="utf-8")
+
+            if code:
                 data["python_code"] = code
             core.write_recording(name, data)
-            if not args.code_file:
+
+            py_path = core.safe_path(name).with_suffix(".py")
+            if code:
+                py_path.write_text(code, encoding="utf-8")
+            else:
                 py_code = scripting.macro_to_python(data, name)
-                py_path = core.safe_path(name).with_suffix(".py")
                 py_path.write_text(py_code, encoding="utf-8")
-            print(f"Created macro: {name}")
+            print(f"Created macro: {name} (script: {py_path})")
         elif args.command in {"run", "replay"}:
             if not backend.available():
                 raise RuntimeError("Interactive desktop is unavailable; run input-reply doctor")
@@ -447,10 +458,33 @@ def main(argv=None):
             speed = speed_factor(args.speed)
             cancel, prior = _cancel_on_sigint()
             try:
-                target, completed = replay_once(backend, args.name, values,
-                                                seconds(args.countdown, 30), args.window_id,
-                                                args.preserve_key_holds, cancel,
-                                                speed=speed, repeat=repeat)
+                file_candidate = Path(args.name)
+                if file_candidate.is_file() and file_candidate.suffix == ".py":
+                    from . import actions, scripting
+                    code = file_candidate.read_text(encoding="utf-8")
+                    stop_listener = actions.start_stop_hotkey(cancel)
+                    try:
+                        completed = True
+                        for rep in range(repeat):
+                            if cancel.is_set():
+                                completed = False
+                                break
+                            ok = scripting.execute_python_macro(code, backend, params=values, speed=speed, cancel=cancel)
+                            if not ok or cancel.is_set():
+                                completed = False
+                                break
+                        target = {"id": "0", "title": file_candidate.name}
+                    finally:
+                        if stop_listener:
+                            try:
+                                stop_listener.stop()
+                            except Exception:
+                                pass
+                else:
+                    target, completed = replay_once(backend, args.name, values,
+                                                    seconds(args.countdown, 30), args.window_id,
+                                                    args.preserve_key_holds, cancel,
+                                                    speed=speed, repeat=repeat)
             finally:
                 _restore_sigint(prior)
             result = {"recording": args.name, "target": target["title"] if target else None,

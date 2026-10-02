@@ -85,10 +85,20 @@ def adopt_legacy_recordings(uid: str) -> int:
     return copied
 
 
+def normalize_name(name: str) -> str:
+    s = str(name).strip()
+    if s.endswith(".py"):
+        s = s[:-3] + ".json"
+    elif not s.endswith(".json") and "." not in s:
+        s = s + ".json"
+    return s
+
+
 def safe_path(name: str) -> Path:
-    if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+    clean = normalize_name(name)
+    if not isinstance(clean, str) or not NAME_RE.fullmatch(clean):
         raise ValueError("Recording name must be a simple .json filename")
-    return recordings_dir() / name
+    return recordings_dir() / clean
 
 
 def new_name(stem: str) -> str:
