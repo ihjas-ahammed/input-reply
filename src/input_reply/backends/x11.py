@@ -1,6 +1,8 @@
 """X11 backend using the original tested recorder and XTest player."""
 
 import json
+import ctypes
+import threading
 import os
 import re
 import signal
@@ -77,7 +79,7 @@ class X11Backend:
             return None
         try:
             output = self.cmd("getwindowgeometry", str(ident))
-            pos_m = re.search(r"Position:\s*(\d+),(\d+)", output)
+            pos_m = re.search(r"Position:\s*(-?\d+),(-?\d+)", output)
             geo_m = re.search(r"Geometry:\s*(\d+)x(\d+)", output)
             if pos_m and geo_m:
                 x, y = int(pos_m.group(1)), int(pos_m.group(2))
@@ -171,22 +173,82 @@ class X11Backend:
             self.x11.close()
             self.x11 = None
 
+    def cursor_position(self):
+        if self.x11 is not None:
+            return self.x11.pointer()
+        connection = x11_engine.X11()
+        try:
+            return connection.pointer()
+        finally:
+            connection.close()
+
+    def set_cursor_position(self, x, y):
+        self.cmd("mousemove", x, y)
+
     def emit(self, event):
-        if event["type"].startswith("button_"):
+        if event["type"].startswith("button_") and "x" in event and "y" in event:
             self.x11.emit({"type": "motion", "x": event["x"], "y": event["y"]})
         self.x11.emit(event)
 
     def type_text(self, value, cancel=None):
         if not value:
             return
-        proc = subprocess.Popen(["xdotool", "type", "--clearmodifiers", "--delay", "10", "--", value],
-                                env=self.env(), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        while proc.poll() is None:
-            if cancel and cancel.wait(0.05):
-                proc.terminate()
-                proc.wait(timeout=2)
-                return
-            if not cancel:
-                time.sleep(0.05)
-        if proc.returncode:
-            raise RuntimeError("Could not type the parameter value")
+        with subprocess.Popen(["xdotool", "type", "--clearmodifiers", "--delay", "10", "--", value],
+                              env=self.env(), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) as proc:
+            while proc.poll() is None:
+                if cancel and cancel.wait(0.05):
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                    return
+                if not cancel:
+                    time.sleep(0.05)
+            if proc.returncode:
+                raise RuntimeError("Could not type the parameter value")
+
+
+class X11StopListener:
+    """Watch Ctrl+Esc without requiring pynput on Linux; own the connection in one thread."""
+
+    def __init__(self, cancel):
+        self.cancel = cancel
+        self.stopped = threading.Event()
+        self.ready = threading.Event()
+        self.error = None
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+        if not self.ready.wait(5):
+            self.stop()
+            raise RuntimeError("X11 stop listener did not start")
+        if self.error:
+            raise RuntimeError("X11 stop listener could not start") from self.error
+
+    def _run(self):
+        connection = None
+        try:
+            connection = x11_engine.X11()
+            lib = connection.xlib
+            lib.XQueryKeymap.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_char)]
+            lib.XQueryKeymap.restype = ctypes.c_int
+            mapping = x11_engine.keyboard_map()
+            ctrl = [code for code, key in mapping.items() if key in {"Control_L", "Control_R"}]
+            escape = next(code for code, key in mapping.items() if key == "Escape")
+            state = ctypes.create_string_buffer(32)
+            self.ready.set()
+            while not self.stopped.is_set():
+                lib.XQueryKeymap(connection.display, state)
+                def down(code):
+                    return bool(state.raw[code // 8] & (1 << (code % 8)))
+                if down(escape) and any(down(code) for code in ctrl):
+                    self.cancel.set()
+                    return
+                self.stopped.wait(0.01)
+        except Exception as error:
+            self.error = error
+        finally:
+            self.ready.set()
+            if connection is not None:
+                connection.close()
+
+    def stop(self):
+        self.stopped.set()
+        self.thread.join(timeout=1)

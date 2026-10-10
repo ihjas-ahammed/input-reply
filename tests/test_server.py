@@ -82,6 +82,9 @@ class ServerTests(unittest.TestCase):
             return response.status, json.load(response)
 
     def test_parameter_api_and_replay(self):
+        from input_reply import scripting
+        data = core.read_recording("demo.json")
+        core.safe_path("demo.json").with_suffix(".py").write_text(scripting.macro_to_python(data, "demo.json"))
         status, public = self.request("/api/inspect?name=demo.json")
         self.assertEqual(status, 200)
         self.assertEqual(len(public["blocks"]), 1)

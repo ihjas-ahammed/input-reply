@@ -293,6 +293,7 @@ def delete_recording(name: str) -> str:
 
 
 def _summary(path: Path, signature) -> dict:
+    from . import scripting
     data = json.loads(path.read_text(encoding="utf-8"))
     validate_recording(data)
     counts = Counter(e["type"] for e in data.get("events", []))
@@ -300,6 +301,7 @@ def _summary(path: Path, signature) -> dict:
     py_exists = bool(data.get("python_code") or (isinstance(py_path, Path) and py_path.is_file()))
     return {"name": path.name, "ai": data.get("format") == FORMAT_AGENT,
             "has_python": py_exists,
+            "custom_python": bool(scripting.custom_macro_code(path.name, data)),
             "steps": len(data.get("steps", [])), "description": str(data.get("description", ""))[:300], "duration": round(float(data.get("duration", 0)), 1),
             "recorded_at": data.get("recorded_at") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(signature[0] / 1e9)),
             "keys": counts["key_down"], "clicks": counts["button_down"],
@@ -313,10 +315,12 @@ def catalog() -> list[dict]:
     for path in recordings_dir().glob("*.json"):
         try:
             signature = _signature(path)
+            py_path = path.with_suffix(".py")
+            summary_signature = (signature, _signature(py_path) if py_path.is_file() else None)
             with _cache_lock:
                 hit = _summaries.get(path)
-            if not hit or hit[0] != signature:
-                hit = (signature, _summary(path, signature))
+            if not hit or hit[0] != summary_signature:
+                hit = (summary_signature, _summary(path, signature))
                 with _cache_lock:
                     _summaries[path] = hit
             rows.append((signature[0], hit[1]))
@@ -405,6 +409,7 @@ def definitions(data: dict, blocks: list[dict]) -> list[dict]:
 
 
 def inspect(name: str, mapping: dict[int, str] | None = None) -> dict:
+    from . import scripting
     data = read_recording(name)
     blocks = typing_blocks(data, mapping)
     params = definitions(data, blocks)
@@ -415,6 +420,7 @@ def inspect(name: str, mapping: dict[int, str] | None = None) -> dict:
     return {"name": name, "target": (data.get("target_window") or {}).get("title", "Unknown window"),
             "duration": data.get("duration", 0), "parameters": params, "ai": data.get("format") == FORMAT_AGENT,
             "has_python": py_exists,
+            "custom_python": bool(scripting.custom_macro_code(name, data)),
             "blocks": [{k: v for k, v in block.items() if k != "indices"} |
                        {"parameter": assigned.get(block["block"])} for block in blocks]}
 
@@ -431,8 +437,11 @@ def add_parameter(name: str, block_number: int, param: str, mapping=None) -> dic
         raise ValueError("Typing block does not exist")
     if any(p["name"] == param or p["block"] == block_number for p in prior):
         raise ValueError("Parameter name or typing block is already used")
+    from . import scripting
+    was_generated = scripting.custom_macro_code(name, data) is None
     data["parameters"] = prior + [{"name": param, "block": block_number}]
     write_recording(name, data)
+    scripting.sync_generated_script(name, data, was_generated)
     return inspect(name, mapping)
 
 
@@ -443,8 +452,11 @@ def remove_parameter(name: str, param: str, mapping=None) -> dict:
     prior = definitions(data, typing_blocks(data, mapping))
     if not any(p["name"] == param for p in prior):
         raise ValueError("Parameter does not exist")
+    from . import scripting
+    was_generated = scripting.custom_macro_code(name, data) is None
     data["parameters"] = [p for p in prior if p["name"] != param]
     write_recording(name, data)
+    scripting.sync_generated_script(name, data, was_generated)
     return inspect(name, mapping)
 
 

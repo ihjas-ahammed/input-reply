@@ -1193,9 +1193,92 @@
     .ai-error { background: var(--danger-bg); color: var(--danger); }
     .ai-system { color: var(--success); font-size: 0.8rem; padding: 0 0.75rem; }
     .ai-tag { font-size: 0.65rem; font-weight: 700; letter-spacing: .05em; padding: 0.1rem 0.4rem; border-radius: var(--radius-full); background: var(--warning-bg); color: var(--warning); }
+
+    /* A quiet workspace with a clear sequence and a compact recording sidebar. */
+    :root {
+      --bg: #101617; --surface: #182021; --surface-card: #1b2526;
+      --surface-subtle: #243031; --surface-input: #121b1c;
+      --border: #344344; --border-hover: #506363;
+      --text-main: #edf3f0; --text-muted: #b0c0ba; --text-dim: #91a59e;
+      --primary: #68d5bd; --primary-hover: #42bba0; --primary-bg: rgba(104,213,189,.12);
+      --border-focus: #68d5bd; --focus-ring: #68d5bd;
+    }
+    :root[data-theme="light"] {
+      --bg: #eff2ed; --surface: #fbfcf9; --surface-card: #fff;
+      --surface-subtle: #e8ede6; --surface-input: #f6f8f3;
+      --border: #ced8cd; --border-hover: #9dab9c;
+      --text-main: #20332e; --text-muted: #4c645b; --text-dim: #597368;
+      --primary: #12735c; --primary-hover: #0d604c; --primary-bg: rgba(18,115,92,.09);
+      --success: #16714e; --danger: #ba3232; --warning: #875d0a;
+    }
+    :root[data-theme="light"] .chip-keys { color: #285b8c; }
+    :root[data-theme="light"] .chip-clicks { color: #1b694f; }
+    :root[data-theme="light"] .chip-moves { color: #694b8e; }
+    :root[data-theme="light"] .recording-card:not(.selected),
+    :root[data-theme="light"] .btn-secondary { background: var(--surface-subtle); }
+    :root[data-theme="light"] .params-error-msg,
+    :root[data-theme="light"] .auth-error-msg { color: var(--danger); }
+    :root[data-theme="light"] .command-text { color: var(--primary); }
+    .btn-primary { color: var(--bg); }
+    .app-wrapper { max-width: 1360px; }
+    .app-header { border-radius: 12px; }
+    .workspace-intro { display: flex; flex-direction: column; gap: 1.25rem; padding: .75rem .25rem; }
+    .eyebrow { color: var(--primary); font-size: .72rem; font-weight: 700; letter-spacing: .12em; margin-bottom: .45rem; }
+    .workspace-intro h2 { font-size: clamp(1.6rem, 3vw, 2.25rem); line-height: 1.2; letter-spacing: -.035em; margin-bottom: .6rem; }
+    .workspace-intro p:not(.eyebrow) { color: var(--text-muted); font-size: .95rem; }
+    .workflow-steps { display: flex; flex-wrap: wrap; gap: 1rem; list-style: none; color: var(--text-muted); font-size: .85rem; }
+    .workflow-steps li { display: flex; gap: .5rem; align-items: center; }
+    .workflow-steps span { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 50%; font-family: var(--font-mono); color: var(--primary); }
+    .app-layout { grid-template-columns: minmax(0, 1fr); align-items: start; }
+    .recordings-card, .record-card { min-width: 0; }
+    .recordings-list-container { max-height: 340px; }
+    .recording-card { border-radius: 8px; }
+    .recording-card.selected { border-color: var(--primary); background: var(--primary-bg); box-shadow: inset 3px 0 var(--primary); }
+    .selected-actions-panel { border-top: 1px solid var(--border); padding-top: 1.25rem; }
+    .selected-title-wrap .chip { margin-bottom: .4rem; align-self: flex-start; }
+    .selected-rec-name { overflow-wrap: anywhere; }
+    .replay-options { border: 1px solid var(--border); border-radius: 8px; padding: .8rem; }
+    .replay-options summary { cursor: pointer; color: var(--text-main); font-size: .875rem; }
+    .replay-options summary span { display: block; font-size: .75rem; color: var(--text-muted); margin-top: .2rem; }
+    .replay-options[open] .form-row-2 { margin-top: 1rem; }
+    .replay-value-input { resize: vertical; min-height: 64px; }
+    .modal-dialog { max-height: calc(100dvh - 2.5rem); }
+    .modal-body { overflow-y: auto; min-height: 0; }
+    .btn { min-height: 44px; }
+    .input-control, .select-control { font-size: 1rem; min-width: 0; }
+    .header-actions { flex-wrap: wrap; }
+    .security-banner { font-size: .8rem; background: var(--surface); color: var(--text-muted); border-color: var(--border); }
+    .job-message { overflow-wrap: anywhere; }
+    @media (min-width: 900px) {
+      .app-layout { grid-template-columns: 330px minmax(0, 1fr); }
+      .record-card { position: sticky; top: 1.25rem; }
+      .workspace-intro { flex-direction: row; align-items: center; justify-content: space-between; }
+      .input-control, .select-control { font-size: .875rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    }
   </style>
 </head>
 <body>
+  <script>
+    (function () {
+      var theme;
+      try { theme = localStorage.getItem('inputReplyTheme'); } catch (_) {}
+      document.documentElement.dataset.theme = theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.addEventListener('DOMContentLoaded', function () {
+        var button = document.getElementById('theme-btn');
+        function label() { button.textContent = document.documentElement.dataset.theme === 'dark' ? 'Light theme' : 'Dark theme'; }
+        label();
+        button.addEventListener('click', function () {
+          var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+          document.documentElement.dataset.theme = next;
+          try { localStorage.setItem('inputReplyTheme', next); } catch (_) {}
+          label();
+        });
+      });
+    })();
+  </script>
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
@@ -1277,6 +1360,7 @@
           </svg>
           Stop Macro
         </button>
+        <button type="button" id="theme-btn" class="btn btn-secondary btn-sm" aria-label="Switch color theme">Light theme</button>
         <button type="button" id="settings-btn" class="btn btn-secondary btn-sm" title="Settings and experimental features">
           Settings
         </button>
@@ -1336,6 +1420,12 @@
       <span class="form-help">Screenshots are sent to Google while I work. Use Stop in the header to interrupt.</span>
     </section>
 
+    <section class="workspace-intro" aria-label="Macro workflow">
+      <div><p class="eyebrow">YOUR DESKTOP, ON REPEAT</p><h2>Record once. Make it yours.</h2>
+        <p>Capture a workflow, name its text fields, and run it with new values.</p></div>
+      <ol class="workflow-steps"><li><span>1</span> Record</li><li><span>2</span> Set parameters</li><li><span>3</span> Replay</li></ol>
+    </section>
+
     <!-- Main Dashboard Grid -->
     <main class="app-layout">
       <!-- COLUMN 1: RECORD NEW MACRO -->
@@ -1357,7 +1447,7 @@
               <select id="rec-window" class="select-control" required aria-required="true">
                 <option value="">-- Choose target window (required) --</option>
               </select>
-              <button type="button" id="refresh-windows-btn" class="btn btn-secondary btn-icon-only" title="Refresh visible desktop windows">
+              <button type="button" id="refresh-windows-btn" aria-label="Refresh desktop windows" class="btn btn-secondary btn-icon-only" title="Refresh visible desktop windows">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
                 </svg>
@@ -1416,6 +1506,10 @@
         </div>
 
         <div class="card-body">
+          <div class="form-group">
+            <label for="recordings-search">Find a recording</label>
+            <input id="recordings-search" type="search" class="input-control" placeholder="Search by name or target window" autocomplete="off">
+          </div>
           <!-- Recordings List Container -->
           <div id="recordings-list" class="recordings-list-container" role="radiogroup" aria-label="Available macro recordings">
             <!-- Dynamically populated via textContent safe DOM methods -->
@@ -1425,6 +1519,7 @@
           <div id="selected-actions-panel" class="selected-actions-panel" style="display: none;">
             <div class="selected-header">
               <div class="selected-title-wrap">
+                <span id="selected-mode" class="chip">Recorded actions</span>
                 <div class="selected-label">Selected Recording</div>
                 <div class="selected-rec-name" id="selected-rec-name">macro.json</div>
               </div>
@@ -1435,7 +1530,7 @@
               <div class="parameters-header">
                 <span class="selected-label">Parameters</span>
               </div>
-              <p class="parameters-explanation">Name a typing block after recording, then enter replacement text for a replay. Recorded text is never previewed here.</p>
+              <p class="parameters-explanation">Give a typing block a name such as recipient or message. Then choose which values to replace below.</p>
               
               <div id="params-error" class="params-error-msg" role="alert" style="display: none;"></div>
 
@@ -1450,6 +1545,7 @@
                 <div class="parameters-header">
                   <span class="selected-label">Parameter Replay Values</span>
                 </div>
+                <p class="form-help">Unchecked keeps the recorded text. A checked, empty value skips that typing block.</p>
                 <div id="replay-values-container" class="replay-values-container"></div>
               </div>
             </div>
@@ -1462,7 +1558,7 @@
                   <select id="replay-target-override" class="select-control" style="flex: 1;">
                     <option value="">Default: Use recorded window</option>
                   </select>
-                  <button type="button" id="refresh-replay-windows-btn" class="btn btn-secondary btn-icon-only" title="Refresh visible open windows">
+                  <button type="button" id="refresh-replay-windows-btn" aria-label="Refresh replay windows" class="btn btn-secondary btn-icon-only" title="Refresh visible open windows">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M23 4v6h-6"></path>
                       <path d="M1 20v-6h6"></path>
@@ -1479,6 +1575,7 @@
               </div>
             </div>
 
+            <details class="replay-options"><summary>More replay options <span>Speed, repetitions &amp; held keys</span></summary>
             <div class="form-row-2">
               <div class="form-group">
                 <label for="replay-repeat">Repeat Count</label>
@@ -1499,6 +1596,8 @@
                 <div class="form-help">Replays synthetic repeat events for keys that were held down (default OFF).</div>
               </div>
             </div>
+
+            </details>
 
             <div class="actions-buttons-row">
               <button type="button" id="replay-btn" class="btn btn-success" style="flex: 1;">
@@ -1566,11 +1665,11 @@
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 0.75rem;">
         <div class="security-banner" style="margin: 0; font-size: 0.8125rem;">
-          <div><strong>Dynamic Python Automation:</strong> Edit steps in Python and add custom conditions (e.g. <code>if params.get("status") == "...":</code>), loops, calculations, or custom timing. When saved, replaying this macro will execute your Python script with real-time cancel (Ctrl+Esc) and speed scaling.</div>
+          <div><strong>Python logic:</strong> Add conditions or loops around <code>context.play_recording(recording)</code> to keep the original actions and named text replacements. For new actions, read values from <code>context.params</code>. Saving activates your script.</div>
         </div>
         <div id="python-error-msg" class="params-error-msg" role="alert" style="display: none;"></div>
         <div style="position: relative;">
-          <textarea id="python-code-editor" class="input-control" style="font-family: var(--font-mono); font-size: 0.825rem; height: 380px; resize: vertical; line-height: 1.45; white-space: pre; tab-size: 4; width: 100%; box-sizing: border-box;" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+          <textarea id="python-code-editor" aria-label="Python macro code" class="input-control" style="font-family: var(--font-mono); font-size: 0.825rem; height: 380px; resize: vertical; line-height: 1.45; white-space: pre; tab-size: 4; width: 100%; box-sizing: border-box;" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
         </div>
       </div>
       <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
@@ -1669,7 +1768,7 @@
       let inspectLoading = false;
       let inspectRequestId = 0;
       let currentInspectedName = null;
-      let replayParamValues = {};
+      let replayParamValues = Object.create(null);
 
       // DOM Elements
       const authView = document.getElementById('auth-view');
@@ -1892,7 +1991,7 @@
         selectedRecording = null;
         currentInspectedName = null;
         inspectData = null;
-        replayParamValues = {};
+        replayParamValues = Object.create(null);
         appView.style.display = 'none';
         authView.style.display = 'flex';
         authTokenInput.value = '';
@@ -1934,6 +2033,7 @@
         const displayLabel = currentStatus.display || 'desktop';
         desktopDot.className = 'status-dot ' + (isDesktopAvail ? 'dot-online' : 'dot-offline');
         desktopText.textContent = displayLabel + (isDesktopAvail ? ' • Desktop Active' : ' • Desktop Offline');
+        document.getElementById('desktop-status-pill').title = displayLabel + ' desktop connection';
 
         // Status Message (using textContent!)
         jobMessage.textContent = currentStatus.message || (isDesktopAvail ? 'Ready' : 'Desktop unavailable');
@@ -1949,6 +2049,7 @@
           recordBtn.disabled = true;
           replayBtn.disabled = true;
           deleteBtn.disabled = true;
+          editPythonBtn.disabled = true;
           updateParamControlStates(true);
         } else {
           jobMonitorCard.classList.remove('is-busy');
@@ -1960,6 +2061,7 @@
           recordBtn.disabled = !isDesktopAvail;
           replayBtn.disabled = !selectedRecording || !isDesktopAvail;
           deleteBtn.disabled = !selectedRecording;
+          editPythonBtn.disabled = !selectedRecording;
           updateParamControlStates(false);
         }
       }
@@ -2168,7 +2270,15 @@
           }
         }
 
-        recordingsList.forEach(function (rec) {
+        const query = document.getElementById('recordings-search').value.trim().toLowerCase();
+        const visibleRecordings = recordingsList.filter(function (rec) { return (rec.name + ' ' + (rec.target || '')).toLowerCase().includes(query); });
+        if (!visibleRecordings.length) {
+          const empty = document.createElement('p');
+          empty.className = 'empty-state';
+          empty.textContent = 'No matches. Try another name or window.';
+          recordingsListContainer.appendChild(empty);
+        }
+        visibleRecordings.forEach(function (rec) {
           const isSelected = selectedRecording && selectedRecording.name === rec.name;
 
           const card = document.createElement('div');
@@ -2277,7 +2387,7 @@
           statsRow.appendChild(clicksChip);
           statsRow.appendChild(movesChip);
 
-          if (rec.has_python) {
+          if (rec.custom_python) {
             const pyChip = document.createElement('span');
             pyChip.className = 'chip';
             pyChip.style.color = '#38bdf8';
@@ -2294,7 +2404,7 @@
           // Event handlers for selection
           function selectThis() {
             if (!selectedRecording || selectedRecording.name !== rec.name) {
-              replayParamValues = {};
+              replayParamValues = Object.create(null);
             }
             selectedRecording = rec;
             renderRecordingsList();
@@ -2314,6 +2424,8 @@
 
         updateSelectedUI();
       }
+
+      document.getElementById('recordings-search').addEventListener('input', renderRecordingsList);
 
       // Update parameter controls disabled status
       function updateParamControlStates(isBusy) {
@@ -2416,8 +2528,10 @@
           checkboxGroup.appendChild(labelWrap);
           row.appendChild(checkboxGroup);
 
-          const input = document.createElement('input');
-          input.type = 'text';
+          const input = document.createElement('textarea');
+          input.rows = 2;
+          input.maxLength = 4000;
+          input.setAttribute('aria-label', 'Replacement text for ' + p.name);
           input.id = 'replay-param-val-' + p.name;
           input.className = 'input-control replay-value-input';
           input.placeholder = 'Replacement text for ' + p.name;
@@ -2439,6 +2553,8 @@
               replayParamValues[p.name] = { checked: false, value: '' };
             }
             replayParamValues[p.name].value = input.value;
+            replayParamValues[p.name].checked = true;
+            checkbox.checked = true;
           });
 
           row.appendChild(input);
@@ -2460,7 +2576,8 @@
         const blocks = Array.isArray(inspectData.blocks) ? inspectData.blocks : [];
         if (blocks.length === 0) {
           paramsEmptyEl.style.display = 'block';
-          replayValuesSection.style.display = 'none';
+          paramsEmptyEl.style.display = inspectData.ai ? 'none' : 'block';
+          renderReplayValues(inspectData.parameters || []);
           return;
         }
 
@@ -2638,20 +2755,21 @@
           deleteBtn.disabled = true;
           currentInspectedName = null;
           inspectData = null;
-          replayParamValues = {};
+          replayParamValues = Object.create(null);
           renderInspect();
           return;
         }
 
         selectedActionsPanel.style.display = 'flex';
         selectedRecNameEl.textContent = String(selectedRecording.name);
+        document.getElementById("selected-mode").textContent = selectedRecording.custom_python ? "Custom Python" : (selectedRecording.ai ? "AI macro" : "Recorded actions");
 
         renderReplayOverrideSelect();
         loadWindows();
 
         if (currentInspectedName !== selectedRecording.name) {
           currentInspectedName = selectedRecording.name;
-          replayParamValues = {};
+          replayParamValues = Object.create(null);
           inspectData = null;
           renderInspect();
           loadInspect(selectedRecording.name);
@@ -2709,7 +2827,7 @@
         } finally {
           setButtonLoading(recordBtn, false, 'Start Recording');
           recordBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle></svg> Start Recording';
-          recordBtn.disabled = Boolean(currentStatus && currentStatus.busy);
+          recordBtn.disabled = Boolean(currentStatus && currentStatus.busy) || !currentStatus.desktop_available;
         }
       });
 
@@ -2783,7 +2901,7 @@
         } finally {
           setButtonLoading(replayBtn, false, 'Replay Macro');
           replayBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Replay Macro';
-          replayBtn.disabled = Boolean(currentStatus && currentStatus.busy);
+          replayBtn.disabled = Boolean(currentStatus && currentStatus.busy) || !currentStatus.desktop_available;
         }
       });
 
@@ -3363,6 +3481,44 @@
         if (sessionStorage.getItem('inputReplyToken')) { clearInterval(boot); poll().then(schedule); }
       }, 500);
       document.addEventListener('visibilitychange', function () { if (!document.hidden) schedule(); });
+    })();
+  </script>
+  <script>
+    // Keep keyboard focus inside an open dialog and return it to the opening control.
+    (function () {
+      var app = document.getElementById('app-view');
+      var dialogs = Array.from(document.querySelectorAll('.modal-backdrop'));
+      var closingButtons = { 'python-modal': 'python-modal-close-btn', 'delete-modal': 'delete-modal-cancel-btn',
+        'settings-modal': 'set-close', 'account-modal': 'acct-close' };
+      dialogs.forEach(function (dialog) {
+        var wasOpen = false, returnFocus = null;
+        new MutationObserver(function () {
+          var isOpen = dialog.style.display === 'flex';
+          if (isOpen === wasOpen) return;
+          wasOpen = isOpen;
+          app.inert = dialogs.some(function (d) { return d.style.display === 'flex'; });
+          if (isOpen) {
+            returnFocus = document.activeElement;
+            var first = dialog.querySelector('button:not(:disabled), input:not(:disabled), textarea:not(:disabled)');
+            if (first) first.focus();
+          } else if (returnFocus && returnFocus.isConnected) {
+            returnFocus.focus();
+          }
+        }).observe(dialog, { attributes: true, attributeFilter: ['style'] });
+        dialog.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape') {
+            var close = document.getElementById(closingButtons[dialog.id]);
+            if (close) close.click();
+            event.stopPropagation();
+          }
+          if (event.key !== 'Tab' || event.defaultPrevented) return;
+          var controls = Array.from(dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href]'))
+            .filter(function (el) { return el.getClientRects().length && el.tabIndex >= 0; });
+          var first = controls[0], last = controls[controls.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        });
+      });
     })();
   </script>
 </body>

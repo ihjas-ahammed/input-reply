@@ -8,8 +8,9 @@ loops, data transformations, and custom automation logic.
 from __future__ import annotations
 
 import json
+import hashlib
+import pprint
 import math
-import os
 import re
 import threading
 import time
@@ -28,6 +29,10 @@ class MacroContext:
         self.speed = float(speed) if speed and float(speed) > 0 else 1.0
         self.cancel = cancel
         self._opened_player = False
+        self.recording = None
+        self.preserve = False
+        self._held_keys = set()
+        self._held_buttons = set()
 
     def is_cancelled(self) -> bool:
         return bool(self.cancel and self.cancel.is_set())
@@ -86,42 +91,55 @@ class MacroContext:
         """Focus a target window by its ID or title."""
         if self.is_cancelled():
             return None
-        if hasattr(self.backend, "focus"):
-            try:
-                if str(title_or_id).isdecimal():
-                    return self.backend.focus(str(title_or_id), cancel=self.cancel)
-            except Exception:
-                pass
+        def activate(ident):
+            from .backends.windows import WindowsBackend
+            if isinstance(self.backend, WindowsBackend):
+                return self.backend.focus(ident, cancel=self.cancel)
+            return self.backend.focus(ident)
+
+        if str(title_or_id).isdecimal():
+            return activate(str(title_or_id))
         if hasattr(self.backend, "windows"):
             wanted = str(title_or_id).lower()
             for win in self.backend.windows():
                 if wanted in win.get("title", "").lower():
-                    return self.backend.focus(win["id"], cancel=self.cancel)
-        return None
+                    return activate(win["id"])
+        raise RuntimeError(f"No open window matches {title_or_id}")
 
     def mouse_down(self, button: str = "left") -> None:
         """Press mouse button down ('left', 'right', 'middle')."""
         if self.is_cancelled():
             return
         btn_name = str(button).lower()
-        if hasattr(self.backend, "mouse_controller") and self.backend.mouse_controller:
+        if getattr(self.backend, "name", "") == "x11":
+            from .actuator import X11_BUTTON
+            self.backend.cmd("mousedown", X11_BUTTON[btn_name])
+        elif getattr(self.backend, "name", "") == "wayland":
+            from .actuator import X11_BUTTON
+            self.backend._run("click", X11_BUTTON[btn_name])
+        elif hasattr(self.backend, "mouse_controller") and self.backend.mouse_controller:
             from pynput.mouse import Button
             b = Button.right if btn_name == "right" else (Button.middle if btn_name == "middle" else Button.left)
             self.backend.mouse_controller.press(b)
         elif hasattr(self.backend, "emit"):
             self.backend.emit({"type": "button_down", "button": btn_name})
+        self._held_buttons.add(btn_name)
 
     def mouse_up(self, button: str = "left") -> None:
         """Release mouse button ('left', 'right', 'middle')."""
-        if self.is_cancelled():
-            return
         btn_name = str(button).lower()
-        if hasattr(self.backend, "mouse_controller") and self.backend.mouse_controller:
+        if getattr(self.backend, "name", "") == "x11":
+            from .actuator import X11_BUTTON
+            self.backend.cmd("mouseup", X11_BUTTON[btn_name])
+        elif getattr(self.backend, "name", "") == "wayland":
+            pass  # wdotool clicks are complete taps.
+        elif hasattr(self.backend, "mouse_controller") and self.backend.mouse_controller:
             from pynput.mouse import Button
             b = Button.right if btn_name == "right" else (Button.middle if btn_name == "middle" else Button.left)
             self.backend.mouse_controller.release(b)
         elif hasattr(self.backend, "emit"):
             self.backend.emit({"type": "button_up", "button": btn_name})
+        self._held_buttons.discard(btn_name)
 
     def click(self, x: int | None = None, y: int | None = None, button: str = "left") -> None:
         """Click at coordinates (x, y) or at current cursor location."""
@@ -146,6 +164,8 @@ class MacroContext:
         """Drag mouse from (x1, y1) to (x2, y2)."""
         if self.is_cancelled():
             return
+        if getattr(self.backend, "name", "") == "wayland":
+            raise RuntimeError("Dragging is not supported on Wayland by wdotool")
         self.mouse_move(x1, y1)
         self.sleep(0.05)
         self.mouse_down(button)
@@ -170,29 +190,40 @@ class MacroContext:
         """Press a keyboard key down."""
         if self.is_cancelled():
             return
-        k_str = str(key).lower()
-        if hasattr(self.backend, "keyboard_controller") and self.backend.keyboard_controller:
+        k_str = str(key)
+        if getattr(self.backend, "name", "") == "x11":
+            self.backend.cmd("keydown", self._x11_key(k_str))
+        elif getattr(self.backend, "name", "") == "wayland":
+            self.backend._run("key", k_str)
+        elif hasattr(self.backend, "keyboard_controller") and self.backend.keyboard_controller:
             from pynput.keyboard import Key, KeyCode
             k = getattr(Key, k_str, None) or KeyCode.from_char(k_str)
             self.backend.keyboard_controller.press(k)
         elif hasattr(self.backend, "emit"):
             self.backend.emit({"type": "key_down", "key": k_str})
+        self._held_keys.add(k_str)
 
     def key_up(self, key: str) -> None:
         """Release a keyboard key."""
-        if self.is_cancelled():
-            return
-        k_str = str(key).lower()
-        if hasattr(self.backend, "keyboard_controller") and self.backend.keyboard_controller:
+        k_str = str(key)
+        if getattr(self.backend, "name", "") == "x11":
+            self.backend.cmd("keyup", self._x11_key(k_str))
+        elif getattr(self.backend, "name", "") == "wayland":
+            pass  # wdotool key commands are complete taps.
+        elif hasattr(self.backend, "keyboard_controller") and self.backend.keyboard_controller:
             from pynput.keyboard import Key, KeyCode
             k = getattr(Key, k_str, None) or KeyCode.from_char(k_str)
             self.backend.keyboard_controller.release(k)
         elif hasattr(self.backend, "emit"):
             self.backend.emit({"type": "key_up", "key": k_str})
+        self._held_keys.discard(k_str)
 
     def press_key(self, key: str) -> None:
         """Press and release a key (e.g. 'enter', 'tab', 'backspace', 'escape')."""
         if self.is_cancelled():
+            return
+        if getattr(self.backend, "name", "") == "wayland":
+            self.backend._run("key", key)
             return
         self.key_down(key)
         self.sleep(0.04)
@@ -202,6 +233,9 @@ class MacroContext:
         """Press a key chord in order and release in reverse (e.g. 'ctrl', 'c')."""
         if self.is_cancelled():
             return
+        if getattr(self.backend, "name", "") == "wayland":
+            self.backend._run("key", "+".join(keys))
+            return
         for k in keys:
             self.key_down(k)
             self.sleep(0.02)
@@ -210,8 +244,43 @@ class MacroContext:
             self.key_up(k)
             self.sleep(0.02)
 
+    @staticmethod
+    def _x11_key(key):
+        return {"enter": "Return", "return": "Return", "escape": "Escape", "esc": "Escape",
+                "ctrl": "Control_L", "control": "Control_L", "shift": "Shift_L", "alt": "Alt_L",
+                "super": "Super_L", "tab": "Tab", "backspace": "BackSpace", "delete": "Delete",
+                "left": "Left", "right": "Right", "up": "Up", "down": "Down",
+                "page_up": "Prior", "page_down": "Next", "home": "Home", "end": "End"}.get(key.lower(), key)
 
-def macro_to_python(data: Any, name: Any = "macro") -> str:
+    def release_inputs(self):
+        for key in list(self._held_keys):
+            self.key_up(key)
+        for button in list(self._held_buttons):
+            self.mouse_up(button)
+
+    def play_recording(self, data):
+        """Replay original events without reconstructing typed text or discarding actions."""
+        if self.is_cancelled():
+            return False
+        from . import actions, macros
+        from .actuator import Actuator
+        # Named blocks are maintained by the app, including after a script was saved.
+        if self.recording is not None:
+            data = data | {"parameters": self.recording.get("parameters", [])}
+        if data.get("format") == core.FORMAT_AGENT:
+            actuator = Actuator(self.backend)
+            if self._opened_player and actuator.name == "windows":
+                # The script owns the controllers; nested playback must leave them open.
+                actuator.opened = True
+                actuator.depth = 1
+            return macros.play(data, self.params, actuator, self.cancel, self.speed)
+        actions.check_backend(data, self.backend)
+        mapping = actions.mapping_for(data, self.backend)
+        events = core.substitute(data, self.params, mapping)
+        return core.play(events, self.backend, self.cancel, self.preserve, self.speed)
+
+
+def _legacy_macro_to_python(data: Any, name: Any = "macro") -> str:
     """Translate a macro recording JSON into an editable Python script."""
     if isinstance(data, str) and isinstance(name, dict):
         data, name = name, data
@@ -412,9 +481,69 @@ def run(context):
     return header + "\n".join(lines) + "\n"
 
 
-def execute_python_macro(code: str, backend, params: dict | None = None, speed: float = 1.0, cancel: threading.Event | None = None) -> bool:
+
+def macro_to_python(data: Any, name: Any = "macro") -> str:
+    """Export lossless playback, with editable Python around the recorded actions."""
+    if isinstance(data, str) and isinstance(name, dict):
+        data, name = name, data
+    payload = dict(data)
+    payload.pop("python_code", None)
+    body = (
+        f"# Input Reply macro: {str(name)!r}\n"
+        "# Add conditions or loops in run(context). Parameters live in context.params.\n"
+        "# play_recording preserves key holds, dragging, scrolling, and timing.\n"
+        "# The app applies the current named typing blocks when replaying this script.\n\n"
+        f"recording = {pprint.pformat(payload, sort_dicts=False, width=100)}\n\n"
+        "def run(context):\n"
+        "    context.play_recording(recording)\n"
+    )
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    return f"# input-reply-generated: {digest}\n" + body
+
+
+def custom_macro_code(name: str, data: dict | None = None) -> str | None:
+    """Recognize untouched exports, including files generated before Python support was fixed."""
+    data = core.read_recording(name) if data is None else data
+    path = core.safe_path(name).with_suffix(".py")
+    code = path.read_text(encoding="utf-8") if path.is_file() else None
+    if not code or not code.strip():
+        code = data.get("python_code")
+    if not isinstance(code, str) or not code.strip():
+        return None
+    # An explicit save is always custom, even if the user saved the generated template.
+    if data.get("python_code"):
+        return code
+    first, _, body = code.partition("\n")
+    if first == "# input-reply-generated: " + hashlib.sha256(body.encode("utf-8")).hexdigest():
+        return None
+    for candidate in (data, data | {"parameters": []}):
+        for label in {name, core.normalize_name(name)}:
+            if code == _legacy_macro_to_python(candidate, label):
+                return None
+    return code
+
+
+def sync_generated_script(name: str, data: dict, was_generated: bool) -> None:
+    if was_generated:
+        core.safe_path(name).with_suffix(".py").write_text(macro_to_python(data, name), encoding="utf-8")
+
+
+def validate_params(params):
+    if not isinstance(params, dict):
+        raise ValueError("Parameter values must be a JSON object")
+    for name, value in params.items():
+        if not isinstance(name, str) or not core.PARAM_RE.fullmatch(name):
+            raise ValueError("Invalid parameter name")
+        if not isinstance(value, str) or len(value) > 4000 or "\x00" in value:
+            raise ValueError(f"Parameter {name} must be text up to 4000 characters")
+
+
+def execute_python_macro(code: str, backend, params: dict | None = None, speed: float = 1.0, cancel: threading.Event | None = None, recording: dict | None = None, preserve: bool = False) -> bool:
     """Execute python macro code inside a controlled environment."""
+    validate_params({} if params is None else params)
     context = MacroContext(backend, params=params, speed=speed, cancel=cancel)
+    context.recording = recording
+    context.preserve = preserve
     env: dict[str, Any] = {
         "__name__": "__macro__",
         "context": context,
@@ -427,11 +556,9 @@ def execute_python_macro(code: str, backend, params: dict | None = None, speed: 
     # Open backend player if needed
     opened = False
     if hasattr(backend, "open_player"):
-        try:
-            backend.open_player()
-            opened = True
-        except Exception:
-            pass
+        backend.open_player()
+        opened = True
+        context._opened_player = True
 
     try:
         compiled = compile(code, "<macro>", "exec")
@@ -444,28 +571,19 @@ def execute_python_macro(code: str, backend, params: dict | None = None, speed: 
             return False
         raise RuntimeError(f"Error executing Python macro: {err}") from err
     finally:
-        if opened and hasattr(backend, "close_player"):
-            try:
+        try:
+            context.release_inputs()
+        finally:
+            if opened and hasattr(backend, "close_player"):
                 backend.close_player()
-            except Exception:
-                pass
 
 
 def get_macro_script(name: str) -> dict[str, Any]:
     """Get the current Python code for a macro (custom or auto-generated)."""
     data = core.read_recording(name)
-    py_path = core.safe_path(name).with_suffix(".py")
-
-    if py_path.exists():
-        try:
-            code = py_path.read_text(encoding="utf-8")
-            if code.strip():
-                return {"name": name, "python_code": code, "custom": True}
-        except Exception:
-            pass
-
-    if data.get("python_code"):
-        return {"name": name, "python_code": data["python_code"], "custom": True}
+    code = custom_macro_code(name, data)
+    if code:
+        return {"name": name, "python_code": code, "custom": True}
 
     generated = macro_to_python(data, name)
     return {"name": name, "python_code": generated, "custom": False}

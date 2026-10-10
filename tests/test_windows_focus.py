@@ -10,6 +10,7 @@ from input_reply.backends.windows import WindowsBackend
 class WindowsFocusTests(unittest.TestCase):
     def backend(self, foreground):
         backend = WindowsBackend.__new__(WindowsBackend)
+        backend.kernel32 = SimpleNamespace(GetCurrentThreadId=Mock(return_value=1))
         backend.user32 = SimpleNamespace(
             IsWindow=Mock(return_value=True), IsIconic=Mock(return_value=False),
             GetForegroundWindow=Mock(side_effect=foreground),

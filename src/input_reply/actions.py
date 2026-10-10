@@ -9,7 +9,6 @@ from __future__ import annotations
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 
 from . import core, macros, scripting
 from .actuator import Actuator
@@ -54,7 +53,14 @@ def start_stop_hotkey(cancel):
     """Listen globally for Ctrl+Esc to stop playback across all repetitions."""
     try:
         from pynput import keyboard
-    except (ImportError, Exception):
+    except Exception:
+        from .backends import select_backend
+        from .backends.x11 import X11StopListener
+        try:
+            if select_backend().name == "x11":
+                return X11StopListener(cancel)
+        except Exception:
+            pass
         return None
 
     ctrl_keys = set()
@@ -216,18 +222,9 @@ def replay_once(backend, name, values, countdown, window_id=None, preserve=False
     data = core.read_recording(name)
     is_agent = (data.get("format") == core.FORMAT_AGENT)
 
-    safe = core.safe_path(name)
-    py_path = safe.with_suffix(".py") if isinstance(safe, Path) else None
-    custom_python = None
-    if isinstance(py_path, Path) and py_path.is_file():
-        try:
-            code = py_path.read_text(encoding="utf-8")
-            if isinstance(code, str) and code.strip():
-                custom_python = code
-        except Exception:
-            pass
-    if not custom_python and isinstance(data.get("python_code"), str):
-        custom_python = data["python_code"]
+    custom_python = scripting.custom_macro_code(name, data)
+    if custom_python:
+        scripting.validate_params(values)
 
     if not custom_python:
         if is_agent:
@@ -293,7 +290,7 @@ def replay_once(backend, name, values, countdown, window_id=None, preserve=False
                 on_started()
 
             if custom_python:
-                success = scripting.execute_python_macro(custom_python, backend, params=values, speed=speed, cancel=cancel)
+                success = scripting.execute_python_macro(custom_python, backend, params=values, speed=speed, cancel=cancel, recording=data, preserve=preserve)
             elif is_agent:
                 success = macros.play(data, values, Actuator(backend), cancel, speed)
             else:
@@ -523,11 +520,9 @@ def _replay(args, backend, state):
     countdown = seconds(args.get("countdown", 3), 30)
     data = core.read_recording(name)
     values = args.get("params", {})
-    safe = core.safe_path(name)
-    py_path = safe.with_suffix(".py") if isinstance(safe, Path) else None
-    has_python = bool(data.get("python_code") or (isinstance(py_path, Path) and py_path.is_file()))
+    has_python = scripting.custom_macro_code(name, data) is not None
     if has_python:
-        pass
+        scripting.validate_params(values)
     elif data.get("format") == core.FORMAT_AGENT:
         macros.resolve(data, values)
     else:

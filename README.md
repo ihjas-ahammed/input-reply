@@ -60,6 +60,14 @@ For AI clients, use `catalog --json`, `inspect NAME --json`, and `run NAME --par
 
 Recordings are saved outside the repository: `~/.local/share/input-reply/recordings/` on Linux or `%LOCALAPPDATA%\InputReply\recordings\` on Windows. X11 recordings from the earlier local v3 app can be copied into this folder. A recording can only replay through the backend that captured it.
 
+## Python macro logic
+
+Every new recording includes an editable Python export. Untouched generated files replay the original events with the current named typing blocks, preserving timing, modifier keys, Backspace, drags, and scrolls. Older untouched exports are recognized automatically, so parameters added after recording work without resetting the macro.
+
+Open **Python Logic** to add conditions or loops around `context.play_recording(recording)`. Saving activates your custom script; **Reset to Default Steps** restores recorded playback. You can also edit the `.py` file directly. Parameter changes keep custom scripts intact. The exported `play_recording` call uses the current named blocks; actions you write yourself should read replacements from `context.params`, for example `context.type_text(context.params.get("message", "Hello"))`.
+
+The dashboard supports search, light and dark themes, multiline replacement values, and keyboard navigation in dialogs. Typing a replacement selects it automatically. Uncheck a parameter to keep the original keystrokes; select it with an empty value to skip that typing block.
+
 ## Desktop app, startup, and accounts
 
 The quickest install gives you the desktop app, registers it to start at login, and launches it:
@@ -143,8 +151,20 @@ Macro coordinates depend on screen layout and scale. Wayland evdev capture store
 ## Development
 
 ```sh
+python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
+
+Linux integration tests automatically run when `Xvfb`, `xterm`, `xdotool`, `xinput`, and `xmodmap` are installed. They create private displays and check real recording, CLI parameter replacement, Python input actions, and Ctrl+Esc cancellation without touching your desktop. They skip when the tools are unavailable.
+
+To check dashboard interactions and desktop/mobile layouts with an installed Chrome or Chromium:
+
+```sh
+python -m pip install playwright
+python tests/browser_check.py
+```
+
+The browser check uses a simulated desktop and temporary recordings; it does not send input to your desktop.
 
 The unit tests use a fake Gemini Live server and a simulated desktop. Three scripts check the real thing and need `GEMINI_API_KEY` (they are not part of the unit tests):
 
